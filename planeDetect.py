@@ -1,8 +1,11 @@
 import open3d as o3d
 import numpy as np
 import os
+from sklearn.cluster import KMeans
 import matplotlib.pyplot as plt
+import cv2
 import heightlowmap
+
 Path = "input_data/02_TallOffice_01_F7_s0p01m.ply"
 
 
@@ -16,6 +19,7 @@ def rel2abs_Path(relativePath: str) -> str:
     return f"{os.path.dirname(os.path.abspath(__file__))}/{relativePath}"
 
 
+# main function here
 def process_pc(cloud_path: str, visualize: bool = False):
     point_cloud: o3d.geometry.PointCloud = o3d.io.read_point_cloud(cloud_path)
     assert (point_cloud.has_normals())
@@ -26,11 +30,32 @@ def process_pc(cloud_path: str, visualize: bool = False):
 
     floor_high, floor_low = heightlowmap.get_high_low_img(floor_pcd, 0.05)
     ceiling_high, ceiling_low = heightlowmap.get_high_low_img(ceiling_bb, 0.05)
-    #save the images
+    # save the images
     plt.imsave(rel2abs_Path("output_data/floor_high_img.png"), floor_high)
     plt.imsave(rel2abs_Path("output_data/floor_low_img.png"), floor_low)
     plt.imsave(rel2abs_Path("output_data/ceiling_high_img.png"), ceiling_high)
     plt.imsave(rel2abs_Path("output_data/ceiling_low_img.png"), ceiling_low)
+
+    # cv use 0~1 while plt con`t care
+    cv2.imwrite(rel2abs_Path("output_data/ceiling_low_img_bi.png"), binarize(ceiling_low))
+
+
+def binarize(img: np.ndarray) -> np.ndarray:
+    pixels = img.reshape(-1, 1)
+    kmeans = KMeans(n_clusters=2)
+    kmeans.fit(pixels)
+
+    # Replace each pixel with the centroid of its cluster
+    segmented_image = kmeans.cluster_centers_[kmeans.labels_]
+    segmented_image = segmented_image.reshape(img.shape)
+    zeroclusterID = segmented_image[0, 0]
+    for i in range(segmented_image.shape[0]):
+        for j in range(segmented_image.shape[1]):
+            if segmented_image[i, j] == zeroclusterID:
+                segmented_image[i, j] = 0
+            else:
+                segmented_image[i, j] = 255
+    return segmented_image
 
 
 def get_floor_ceiling(point_cloud: o3d.geometry.PointCloud, visualize: bool) \
@@ -75,7 +100,6 @@ def extract_planes_point(
         ceiling: o3d.geometry.OrientedBoundingBox,
         visualize: bool = False) \
         -> tuple[o3d.geometry.PointCloud, o3d.geometry.PointCloud]:
-
     floor_point_cloud = pcd.crop(floor)
     ceiling_point_cloud = pcd.crop(ceiling)
 

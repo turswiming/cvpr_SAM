@@ -34,9 +34,9 @@ def get_high_low_img(
     lowest_img = np.zeros(
         (int((max_bb[0] - min_bb[0]) / resolution) + 1, int((max_bb[1] - min_bb[1]) / resolution) + 1))
     for key, value in height_dict.items():
-        height_img[key[0], key[1]] = (value - min_bb[2]) / (max_bb[2] - min_bb[2]) * 0.8 + 0.1
+        height_img[key[0], key[1]] = (value - min_bb[2]) / (max_bb[2] - min_bb[2]) * 0.6 + 0.4
     for key, value in lowest_dict.items():
-        lowest_img[key[0], key[1]] = (value - min_bb[2]) / (max_bb[2] - min_bb[2]) * 0.8 + 0.1
+        lowest_img[key[0], key[1]] = (value - min_bb[2]) / (max_bb[2] - min_bb[2]) * 0.6 + 0.4
     return height_img, lowest_img
 
 

@@ -6,7 +6,25 @@ import matplotlib.pyplot as plt
 import cv2
 import heightlowmap
 
-Path = "input_data/02_TallOffice_01_F7_s0p01m.ply"
+
+
+class Subimage:
+    def __init__(self, bias_x: int, bias_y: int, width: int, height: int, img: np.ndarray):
+        self.bias_x = bias_x
+        self.bias_y = bias_y
+        self.width = width
+        self.height = height
+        self.img = img
+        self.filled = False
+
+    def fill_img(self, img: np.ndarray):
+        self.filled = True
+        for i in range(self.img.shape[0]):
+            for j in range(self.img.shape[1]):
+                if i + self.bias_y >= img.shape[0] or j + self.bias_x >= img.shape[1]:
+                    continue
+                if self.img[i, j] == 0:
+                    img[i + self.bias_y, j + self.bias_x] = self.img[i, j]
 
 
 def compare_oboxes(obox):
@@ -19,54 +37,128 @@ def rel2abs_Path(relativePath: str) -> str:
     return f"{os.path.dirname(os.path.abspath(__file__))}/{relativePath}"
 
 
+def to_fill(subimage: Subimage, res: float) -> bool:
+    if subimage.filled:
+        return False
+    if subimage.width * res < 0.3 or subimage.height * res < 0.3:
+        return True
+    if subimage.width * res < 0.6 and subimage.height < 0.6:
+        return True
+
+
 # main function here
 def process_pc(cloud_path: str, visualize: bool = False):
     point_cloud: o3d.geometry.PointCloud = o3d.io.read_point_cloud(cloud_path)
+    #GET FILE NAME without extension
+    file_name = os.path.splitext(os.path.basename(cloud_path))[0]
     assert (point_cloud.has_normals())
 
-    floor_bb, ceiling_bb = get_floor_ceiling(point_cloud, False)
+    floor_bb, ceiling_bb = get_floor_ceiling(point_cloud, visualize)
 
     floor_pcd, ceiling_bb = extract_planes_point(point_cloud, floor_bb, ceiling_bb, visualize)
 
-    floor_high, floor_low = heightlowmap.get_high_low_img(floor_pcd, 0.05)
-    ceiling_high, ceiling_low = heightlowmap.get_high_low_img(ceiling_bb, 0.05)
+    floor_high, floor_low = heightlowmap.get_high_low_img(floor_pcd, 0.15)
+    ceiling_high, ceiling_low = heightlowmap.get_high_low_img(ceiling_bb, 0.15)
     # save the images
-    plt.imsave(rel2abs_Path("output_data/floor_high_img.png"), floor_high)
-    plt.imsave(rel2abs_Path("output_data/floor_low_img.png"), floor_low)
-    plt.imsave(rel2abs_Path("output_data/ceiling_high_img.png"), ceiling_high)
-    plt.imsave(rel2abs_Path("output_data/ceiling_low_img.png"), ceiling_low)
+    plt.imsave(rel2abs_Path("output_data/{}_floor_high_img.png".format(file_name)), floor_high)
+    plt.imsave(rel2abs_Path("output_data/{}_floor_low_img.png".format(file_name)), floor_low)
+    plt.imsave(rel2abs_Path("output_data/{}_ceiling_high_img.png".format(file_name)), ceiling_high)
+    plt.imsave(rel2abs_Path("output_data/{}_ceiling_low_img.png".format(file_name)), ceiling_low)
 
     # cv use 0~1 while plt con`t care
-    cv2.imwrite(rel2abs_Path("output_data/ceiling_low_img_bi.png"), binarize(ceiling_low))
+    ceiling_low_bi = binarize(ceiling_low)
+    cv2.imwrite(rel2abs_Path("output_data/{}_ceiling_low_bi_img.png".format(file_name)), ceiling_low_bi)
+
+    tempcopy = np.copy(ceiling_low_bi)
+    subimages = []
+    # get all zero subimages and save them
+    for y in range(tempcopy.shape[0]):
+        for x in range(tempcopy.shape[1]):
+            if tempcopy[y, x] == 0:
+                subimages.append(extract_1subimage(tempcopy, x, y))
+
+    print(f"extracting {len(subimages)}th subimage")
+    for i, subimage in enumerate(subimages):
+        if to_fill(subimage, 0.15):
+            print(f"filling {i}th subimage")
+            subimage.fill_img(ceiling_low_bi)
+            subimage.filled = True
+            for i in range(subimage.img.shape[0]):
+                for j in range(subimage.img.shape[1]):
+                    if i + subimage.bias_y >= ceiling_low_bi.shape[0] or j + subimage.bias_x >= ceiling_low_bi.shape[1]:
+                        continue
+                    if subimage.img[i, j] == True:
+                        ceiling_low_bi[i + subimage.bias_y, j + subimage.bias_x] = 255
+
+    cv2.imwrite(rel2abs_Path("output_data/{}_ceiling_low_bi_fill.png".format(file_name)), ceiling_low_bi)
+
+
+def extract_1subimage(img: np.ndarray, x: int, y: int) -> Subimage:
+    height, width = img.shape
+    visited = np.zeros((height, width), dtype=bool)
+    min_x, min_y, max_x, max_y = width,height, 0, 0
+
+    stack = []
+    stack.append((y, x))
+    while len(stack) > 0:
+        y, x = stack.pop()
+        if not (0 <= x < width and 0 <= y < height) or visited[y, x] or img[y, x] != 0:
+            continue
+        visited[y, x] = True
+        min_x = min(min_x, x)
+        min_y = min(min_y, y)
+        max_x = max(max_x, x)
+        max_y = max(max_y, y)
+        img[y, x] = 255
+        stack.extend([
+            (y + 1, x),
+            (y - 1, x),
+            (y, x + 1),
+            (y, x - 1),
+            (y + 1, x + 1),
+            (y + 1, x - 1),
+            (y - 1, x + 1),
+            (y - 1, x - 1)])
+
+
+    # get the subimage
+    subimage = Subimage(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1, visited[min_y:max_y + 1, min_x:max_x + 1])
+    return subimage
 
 
 def binarize(img: np.ndarray) -> np.ndarray:
     pixels = img.reshape(-1, 1)
     kmeans = KMeans(n_clusters=2)
     kmeans.fit(pixels)
-
-    # Replace each pixel with the centroid of its cluster
-    segmented_image = kmeans.cluster_centers_[kmeans.labels_]
-    segmented_image = segmented_image.reshape(img.shape)
-    zeroclusterID = segmented_image[0, 0]
-    for i in range(segmented_image.shape[0]):
-        for j in range(segmented_image.shape[1]):
-            if segmented_image[i, j] == zeroclusterID:
-                segmented_image[i, j] = 0
+    out = img.copy()
+    for i in range(img.shape[0]):
+        for j in range(img.shape[1]):
+            if img[i, j] < 0.001:
+                out[i, j] = 0
             else:
-                segmented_image[i, j] = 255
-    return segmented_image
+                out[i, j] = 255
+    return out
 
 
 def get_floor_ceiling(point_cloud: o3d.geometry.PointCloud, visualize: bool) \
         -> tuple[o3d.geometry.OrientedBoundingBox, o3d.geometry.OrientedBoundingBox]:
-    # using all defaults
-    oboxes = point_cloud.detect_planar_patches(
-        normal_variance_threshold_deg=60,
-        coplanarity_deg=75,
-        outlier_ratio=0.75,
-        min_plane_edge_length=0,
-        min_num_points=0,
+    normal_criteria = np.array([0, 0, 1])  # This is an example, adjust it to your needs
+    point_cloud.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
+
+    indices = []
+    for i, normal in enumerate(point_cloud.normals):
+        dot_product = np.dot(normal, normal_criteria)
+        if dot_product > 0.9 or dot_product < -0.9:
+            indices.append(i)
+
+    filtered_point_cloud = point_cloud.select_by_index(indices)
+
+    oboxes = filtered_point_cloud.detect_planar_patches(
+        normal_variance_threshold_deg=35,
+        coplanarity_deg=60,
+        outlier_ratio=3,
+        min_plane_edge_length=4,
+        min_num_points=1200,
         search_param=o3d.geometry.KDTreeSearchParamKNN(knn=30))
     print("Detected {} patches".format(len(oboxes)))
     sorted_oboxes = sorted(oboxes, key=compare_oboxes)
@@ -88,9 +180,20 @@ def get_floor_ceiling(point_cloud: o3d.geometry.PointCloud, visualize: bool) \
             mesh.paint_uniform_color(obox.color)
             geometries.append(mesh)
             geometries.append(obox)
-    geometries.append(point_cloud)
+    geometries.append(filtered_point_cloud)
     if visualize:
         o3d.visualization.draw_geometries(geometries)
+    #extend the floor and ceiling
+    bbox = point_cloud.get_axis_aligned_bounding_box()
+    floor.get_max_bound()[0] = bbox.get_max_bound()[0]
+    floor.get_max_bound()[1] = bbox.get_max_bound()[1]
+    floor.get_min_bound()[0] = bbox.get_min_bound()[0]
+    floor.get_min_bound()[1] = bbox.get_min_bound()[1]
+    ceiling.get_max_bound()[0] = bbox.get_max_bound()[0]
+    ceiling.get_max_bound()[1] = bbox.get_max_bound()[1]
+    ceiling.get_min_bound()[0] = bbox.get_min_bound()[0]
+    ceiling.get_min_bound()[1] = bbox.get_min_bound()[1]
+
     return floor, ceiling
 
 
@@ -105,6 +208,13 @@ def extract_planes_point(
 
     return floor_point_cloud, ceiling_point_cloud
 
-
+Path = "/media/lzq/Windows/Users/14318/scan2bim2024/3d/test/2cm/"
 if __name__ == "__main__":
-    process_pc(Path, True)
+    process_pc("/media/lzq/Windows/Users/14318/scan2bim2024/3d/test/2cm/25_Parking_01_F2.ply",True)
+    #get all clouds in the folder
+    for file in os.listdir(Path):
+        if file.endswith(".ply"):
+            print(f"processing {file}")
+            process_pc(Path + file, False)
+#11_MedOffice_05_F4 have identify problem
+#25_Parking_01_F1 need check

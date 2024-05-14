@@ -7,7 +7,6 @@ import cv2
 import heightlowmap
 
 
-
 class Subimage:
     def __init__(self, bias_x: int, bias_y: int, width: int, height: int, img: np.ndarray):
         self.bias_x = bias_x
@@ -23,9 +22,8 @@ class Subimage:
             for j in range(self.img.shape[1]):
                 if i + self.bias_y >= img.shape[0] or j + self.bias_x >= img.shape[1]:
                     continue
-                if self.img[i, j] == 0:
-                    img[i + self.bias_y, j + self.bias_x] = self.img[i, j]
-
+                if self.img[i, j] == True:
+                    img[i + self.bias_y, j + self.bias_x] = 255
 
 def compare_oboxes(obox):
     min_b = obox.get_min_bound()
@@ -40,16 +38,16 @@ def rel2abs_Path(relativePath: str) -> str:
 def to_fill(subimage: Subimage, res: float) -> bool:
     if subimage.filled:
         return False
-    if subimage.width * res < 0.3 or subimage.height * res < 0.3:
+    if subimage.width * res < 0.3 or subimage.height * res < 0.46:
         return True
     if subimage.width * res < 0.6 and subimage.height < 0.6:
         return True
 
 
 # main function here
-def process_pc(cloud_path: str, visualize: bool = False):
+def process_pc(cloud_path: str, visualize: bool = False, res: float = 0.15):
     point_cloud: o3d.geometry.PointCloud = o3d.io.read_point_cloud(cloud_path)
-    #GET FILE NAME without extension
+    # GET FILE NAME without extension
     file_name = os.path.splitext(os.path.basename(cloud_path))[0]
     assert (point_cloud.has_normals())
 
@@ -57,8 +55,8 @@ def process_pc(cloud_path: str, visualize: bool = False):
 
     floor_pcd, ceiling_bb = extract_planes_point(point_cloud, floor_bb, ceiling_bb, visualize)
 
-    floor_high, floor_low = heightlowmap.get_high_low_img(floor_pcd, 0.15)
-    ceiling_high, ceiling_low = heightlowmap.get_high_low_img(ceiling_bb, 0.15)
+    floor_high, floor_low = heightlowmap.get_high_low_img(floor_pcd, res)
+    ceiling_high, ceiling_low = heightlowmap.get_high_low_img(ceiling_bb, res)
     # save the images
     plt.imsave(rel2abs_Path("output_data/{}_floor_high_img.png".format(file_name)), floor_high)
     plt.imsave(rel2abs_Path("output_data/{}_floor_low_img.png".format(file_name)), floor_low)
@@ -79,16 +77,10 @@ def process_pc(cloud_path: str, visualize: bool = False):
 
     print(f"extracting {len(subimages)}th subimage")
     for i, subimage in enumerate(subimages):
-        if to_fill(subimage, 0.15):
+        if to_fill(subimage, res):
             print(f"filling {i}th subimage")
             subimage.fill_img(ceiling_low_bi)
             subimage.filled = True
-            for i in range(subimage.img.shape[0]):
-                for j in range(subimage.img.shape[1]):
-                    if i + subimage.bias_y >= ceiling_low_bi.shape[0] or j + subimage.bias_x >= ceiling_low_bi.shape[1]:
-                        continue
-                    if subimage.img[i, j] == True:
-                        ceiling_low_bi[i + subimage.bias_y, j + subimage.bias_x] = 255
 
     cv2.imwrite(rel2abs_Path("output_data/{}_ceiling_low_bi_fill.png".format(file_name)), ceiling_low_bi)
 
@@ -96,7 +88,7 @@ def process_pc(cloud_path: str, visualize: bool = False):
 def extract_1subimage(img: np.ndarray, x: int, y: int) -> Subimage:
     height, width = img.shape
     visited = np.zeros((height, width), dtype=bool)
-    min_x, min_y, max_x, max_y = width,height, 0, 0
+    min_x, min_y, max_x, max_y = width, height, 0, 0
 
     stack = []
     stack.append((y, x))
@@ -119,7 +111,6 @@ def extract_1subimage(img: np.ndarray, x: int, y: int) -> Subimage:
             (y + 1, x - 1),
             (y - 1, x + 1),
             (y - 1, x - 1)])
-
 
     # get the subimage
     subimage = Subimage(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1, visited[min_y:max_y + 1, min_x:max_x + 1])
@@ -183,18 +174,23 @@ def get_floor_ceiling(point_cloud: o3d.geometry.PointCloud, visualize: bool) \
     geometries.append(filtered_point_cloud)
     if visualize:
         o3d.visualization.draw_geometries(geometries)
-    #extend the floor and ceiling
-    bbox = point_cloud.get_axis_aligned_bounding_box()
-    floor.get_max_bound()[0] = bbox.get_max_bound()[0]
-    floor.get_max_bound()[1] = bbox.get_max_bound()[1]
-    floor.get_min_bound()[0] = bbox.get_min_bound()[0]
-    floor.get_min_bound()[1] = bbox.get_min_bound()[1]
-    ceiling.get_max_bound()[0] = bbox.get_max_bound()[0]
-    ceiling.get_max_bound()[1] = bbox.get_max_bound()[1]
-    ceiling.get_min_bound()[0] = bbox.get_min_bound()[0]
-    ceiling.get_min_bound()[1] = bbox.get_min_bound()[1]
 
-    return floor, ceiling
+    # extend the floor and ceiling
+    floor: o3d.geometry.AxisAlignedBoundingBox = floor.get_axis_aligned_bounding_box()
+    ceiling: o3d.geometry.AxisAlignedBoundingBox = ceiling.get_axis_aligned_bounding_box()
+
+    bbox = point_cloud.get_axis_aligned_bounding_box()
+    xmin, ymin, zmin = bbox.get_min_bound()
+    xmax, ymax, zmax = bbox.get_max_bound()
+    extend_floor = o3d.geometry.AxisAlignedBoundingBox(
+        min_bound=(xmin, ymin, floor.get_min_bound()[2]),
+        max_bound=(xmax, ymax, floor.get_max_bound()[2]))
+
+    extend_ceiling = o3d.geometry.AxisAlignedBoundingBox(
+        min_bound=(xmin, ymin, ceiling.get_min_bound()[2]),
+        max_bound=(xmax, ymax, ceiling.get_max_bound()[2]))
+
+    return extend_floor, extend_ceiling
 
 
 def extract_planes_point(
@@ -208,13 +204,15 @@ def extract_planes_point(
 
     return floor_point_cloud, ceiling_point_cloud
 
+
 Path = "/media/lzq/Windows/Users/14318/scan2bim2024/3d/test/2cm/"
 if __name__ == "__main__":
-    process_pc("/media/lzq/Windows/Users/14318/scan2bim2024/3d/test/2cm/25_Parking_01_F2.ply",True)
-    #get all clouds in the folder
+    process_pc("/media/lzq/Windows/Users/14318/scan2bim2024/3d/test/2cm/25_Parking_01_F1.ply", True, res=0.075)
+    # get all clouds in the folder
     for file in os.listdir(Path):
         if file.endswith(".ply"):
             print(f"processing {file}")
             process_pc(Path + file, False)
-#11_MedOffice_05_F4 have identify problem
-#25_Parking_01_F1 need check
+# 11_MedOffice_05_F4 have problem --> solved
+# 25_Parking_01_F1 floor detection problem -> ceiling solved floor unsolved -->solved
+# 25_Parking_01_F2 floor detection problem  -->solved

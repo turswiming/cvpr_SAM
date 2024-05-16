@@ -6,7 +6,6 @@ import matplotlib.pyplot as plt
 import cv2
 import heightlowmap
 
-
 class Subimage:
     def __init__(self, bias_x: int, bias_y: int, width: int, height: int, img: np.ndarray):
         self.bias_x = bias_x
@@ -49,7 +48,8 @@ def process_pc(cloud_path: str, visualize: bool = False, res: float = 0.15):
     point_cloud: o3d.geometry.PointCloud = o3d.io.read_point_cloud(cloud_path)
     # GET FILE NAME without extension
     file_name = os.path.splitext(os.path.basename(cloud_path))[0]
-    assert (point_cloud.has_normals())
+    if(not point_cloud.has_normals()):
+        point_cloud.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
 
     floor_bb, ceiling_bb = get_floor_ceiling(point_cloud, visualize)
 
@@ -205,14 +205,13 @@ def extract_planes_point(
     return floor_point_cloud, ceiling_point_cloud
 
 
-Path = "/media/lzq/Windows/Users/14318/scan2bim2024/3d/test/2cm/"
+Path = "/home/lzq/Desktop/LAZ_test"
 if __name__ == "__main__":
-    process_pc("/media/lzq/Windows/Users/14318/scan2bim2024/3d/test/2cm/25_Parking_01_F1.ply", True, res=0.075)
+    #process_pc("/media/lzq/Windows/Users/14318/scan2bim2024/3d/test/2cm/25_Parking_01_F1.ply", True, res=0.075)
     # get all clouds in the folder
     for file in os.listdir(Path):
         if file.endswith(".ply"):
-            print(f"processing {file}")
-            process_pc(Path + file, False)
+            process_pc(f"{Path}/{file}", False)
 # 11_MedOffice_05_F4 have problem --> solved
 # 25_Parking_01_F1 floor detection problem -> ceiling solved floor unsolved -->solved
 # 25_Parking_01_F2 floor detection problem  -->solved

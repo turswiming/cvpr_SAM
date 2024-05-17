@@ -65,22 +65,22 @@ def process_pc(cloud_path: str, visualize: bool = False, res: float = 0.15):
 
     # cv use 0~1 while plt con`t care
     ceiling_low_bi = binarize(ceiling_low)
-    cv2.imwrite(rel2abs_Path("output_data/{}_ceiling_low_bi_img.png".format(file_name)), ceiling_low_bi)
-
-    tempcopy = np.copy(ceiling_low_bi)
-    subimages = []
-    # get all zero subimages and save them
-    for y in range(tempcopy.shape[0]):
-        for x in range(tempcopy.shape[1]):
-            if tempcopy[y, x] == 0:
-                subimages.append(extract_1subimage(tempcopy, x, y))
-
-    print(f"extracting {len(subimages)}th subimage")
-    for i, subimage in enumerate(subimages):
-        if to_fill(subimage, res):
-            print(f"filling {i}th subimage")
-            subimage.fill_img(ceiling_low_bi)
-            subimage.filled = True
+    # cv2.imwrite(rel2abs_Path("output_data/{}_ceiling_low_bi_img.png".format(file_name)), ceiling_low_bi)
+    #
+    # tempcopy = np.copy(ceiling_low_bi)
+    # subimages = []
+    # # get all zero subimages and save them
+    # for y in range(tempcopy.shape[0]):
+    #     for x in range(tempcopy.shape[1]):
+    #         if tempcopy[y, x] == 0:
+    #             subimages.append(extract_1subimage(tempcopy, x, y))
+    #
+    # print(f"extracting {len(subimages)}th subimage")
+    # for i, subimage in enumerate(subimages):
+    #     if to_fill(subimage, res):
+    #         print(f"filling {i}th subimage")
+    #         subimage.fill_img(ceiling_low_bi)
+    #         subimage.filled = True
 
     cv2.imwrite(rel2abs_Path("output_data/{}_ceiling_low_bi_fill.png".format(file_name)), ceiling_low_bi)
 
@@ -183,12 +183,12 @@ def get_floor_ceiling(point_cloud: o3d.geometry.PointCloud, visualize: bool) \
     xmin, ymin, zmin = bbox.get_min_bound()
     xmax, ymax, zmax = bbox.get_max_bound()
     extend_floor = o3d.geometry.AxisAlignedBoundingBox(
-        min_bound=(xmin, ymin, floor.get_min_bound()[2]),
-        max_bound=(xmax, ymax, floor.get_max_bound()[2]))
+        min_bound=(xmin, ymin, floor.get_min_bound()[2]-0.05),
+        max_bound=(xmax, ymax, floor.get_max_bound()[2]+0.05))
 
     extend_ceiling = o3d.geometry.AxisAlignedBoundingBox(
-        min_bound=(xmin, ymin, ceiling.get_min_bound()[2]),
-        max_bound=(xmax, ymax, ceiling.get_max_bound()[2]))
+        min_bound=(xmin, ymin, ceiling.get_min_bound()[2]-0.3),
+        max_bound=(xmax, ymax, ceiling.get_max_bound()[2]+3))
 
     return extend_floor, extend_ceiling
 
@@ -211,7 +211,7 @@ if __name__ == "__main__":
     # get all clouds in the folder
     for file in os.listdir(Path):
         if file.endswith(".ply"):
-            process_pc(f"{Path}/{file}", False)
+            process_pc(f"{Path}/{file}", False,res=0.02)
 # 11_MedOffice_05_F4 have problem --> solved
 # 25_Parking_01_F1 floor detection problem -> ceiling solved floor unsolved -->solved
 # 25_Parking_01_F2 floor detection problem  -->solved

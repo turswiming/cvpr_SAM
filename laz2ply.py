@@ -9,6 +9,10 @@ def laz2ply(laz_path: str, ply_path: str):
     points = np.vstack((las_file.x, las_file.y, las_file.z)).transpose()
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(points)
+    #voxal downsample and calculate density
+    o3d.utilit
+
+
     o3d.io.write_point_cloud(ply_path, pcd)
 
 

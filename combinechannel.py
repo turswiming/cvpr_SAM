@@ -50,9 +50,10 @@ for name in names:
     img2 = cv2.imread(path+"/"+ceiling_low, cv2.IMREAD_GRAYSCALE)
     img3 = cv2.imread(path+"/"+floor_high, cv2.IMREAD_GRAYSCALE)
 
-    img1 = normalizeImage(img1,7)
-    img2 = normalizeImage(img2,7)
-    img3 = normalizeImage(img3,0.1)
+    #these magic numbers are the scale factors, come from chromatology theory
+    img1 = normalizeImage(img1,7) # A factor
+    img2 = normalizeImage(img2,7) # B factor
+    img3 = normalizeImage(img3,0.1) # L factor
 
     img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
     img3 = cv2.resize(img3, (img1.shape[1], img1.shape[0]))

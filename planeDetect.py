@@ -261,7 +261,7 @@ def extract_planes_point(
 
 Path = "/home/lzq/Desktop/LAZ_test"
 if __name__ == "__main__":
-    process_pc("/home/lzq/Desktop/LAZ_test/34_Parking_04_F1.ply", True, res=0.075)
+    #process_pc("/home/lzq/Desktop/LAZ_test/34_Parking_04_F1.ply", True, res=0.075)
     # get all clouds in the folder
     for file in os.listdir(Path):
         if file.endswith(".ply"):

@@ -3,8 +3,11 @@ import numpy as np
 import os
 from sklearn.cluster import KMeans
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 import cv2
 import heightlowmap
+import json
+from concurrent.futures import ThreadPoolExecutor
 
 class Subimage:
     def __init__(self, bias_x: int, bias_y: int, width: int, height: int, img: np.ndarray):
@@ -24,6 +27,7 @@ class Subimage:
                 if self.img[i, j] == True:
                     img[i + self.bias_y, j + self.bias_x] = 255
 
+
 def compare_oboxes(obox):
     min_b = obox.get_min_bound()
     max_b = obox.get_max_bound()
@@ -33,7 +37,10 @@ def compare_oboxes(obox):
 def rel2abs_Path(relativePath: str) -> str:
     return f"{os.path.dirname(os.path.abspath(__file__))}/{relativePath}"
 
-
+def getBaseNameWithoutExtension(path: str) -> str:
+    return os.path.splitext(os.path.basename(path))[0]
+    
+    
 def to_fill(subimage: Subimage, res: float) -> bool:
     if subimage.filled:
         return False
@@ -48,23 +55,30 @@ def process_pc(cloud_path: str, visualize: bool = False, res: float = 0.15):
     point_cloud: o3d.geometry.PointCloud = o3d.io.read_point_cloud(cloud_path)
     # GET FILE NAME without extension
     file_name = os.path.splitext(os.path.basename(cloud_path))[0]
-    if(not point_cloud.has_normals()):
+    if (not point_cloud.has_normals()):
         point_cloud.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
 
-    floor_bb, ceiling_bb = get_floor_ceiling(point_cloud, visualize)
-
+    floor_bb, ceiling_bb = get_floor_ceiling(cloud_path, point_cloud, visualize)
+    # print these to json file
+    bb_data = {
+        "floor": {"min": [floor_bb.get_min_bound()[0], floor_bb.get_min_bound()[1], floor_bb.get_min_bound()[2]]
+            , "max": [floor_bb.get_max_bound()[0], floor_bb.get_max_bound()[1], floor_bb.get_max_bound()[2]]},
+        "ceiling": {"min": [ceiling_bb.get_min_bound()[0], ceiling_bb.get_min_bound()[1], ceiling_bb.get_min_bound()[2]]
+            , "max": [ceiling_bb.get_max_bound()[0], ceiling_bb.get_max_bound()[1], ceiling_bb.get_max_bound()[2]]}
+    }
+    with open("output_data/{}_bbox.json".format(file_name), 'w') as f:
+        json.dump(bb_data, f)
     floor_pcd, ceiling_bb = extract_planes_point(point_cloud, floor_bb, ceiling_bb, visualize)
 
     floor_high, floor_low = heightlowmap.get_high_low_img(floor_pcd, res)
     ceiling_high, ceiling_low = heightlowmap.get_high_low_img(ceiling_bb, res)
     # save the images
-    plt.imsave(rel2abs_Path("output_data/{}_floor_high_img.png".format(file_name)), floor_high)
-    plt.imsave(rel2abs_Path("output_data/{}_floor_low_img.png".format(file_name)), floor_low)
-    plt.imsave(rel2abs_Path("output_data/{}_ceiling_high_img.png".format(file_name)), ceiling_high)
-    plt.imsave(rel2abs_Path("output_data/{}_ceiling_low_img.png".format(file_name)), ceiling_low)
+    cv2.imwrite(rel2abs_Path("output_data/{}_floor_high_img.png".format(file_name)), floor_high)
+    cv2.imwrite(rel2abs_Path("output_data/{}_floor_low_img.png".format(file_name)), floor_low)
+    cv2.imwrite(rel2abs_Path("output_data/{}_ceiling_high_img.png".format(file_name)), ceiling_high)
+    cv2.imwrite(rel2abs_Path("output_data/{}_ceiling_low_img.png".format(file_name)), ceiling_low)
 
     # cv use 0~1 while plt con`t care
-    ceiling_low_bi = binarize(ceiling_low)
     # cv2.imwrite(rel2abs_Path("output_data/{}_ceiling_low_bi_img.png".format(file_name)), ceiling_low_bi)
     #
     # tempcopy = np.copy(ceiling_low_bi)
@@ -81,9 +95,7 @@ def process_pc(cloud_path: str, visualize: bool = False, res: float = 0.15):
     #         print(f"filling {i}th subimage")
     #         subimage.fill_img(ceiling_low_bi)
     #         subimage.filled = True
-
-    cv2.imwrite(rel2abs_Path("output_data/{}_ceiling_low_bi_fill.png".format(file_name)), ceiling_low_bi)
-
+    # cv2.imwrite(rel2abs_Path("output_data/{}_ceiling_low_bi_fill_img.png".format(file_name)), ceiling_low_bi)
 
 def extract_1subimage(img: np.ndarray, x: int, y: int) -> Subimage:
     height, width = img.shape
@@ -116,7 +128,7 @@ def extract_1subimage(img: np.ndarray, x: int, y: int) -> Subimage:
     subimage = Subimage(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1, visited[min_y:max_y + 1, min_x:max_x + 1])
     return subimage
 
-
+#Warning: bug contained, if the image is too large, the function will not work
 def binarize(img: np.ndarray) -> np.ndarray:
     pixels = img.reshape(-1, 1)
     kmeans = KMeans(n_clusters=2)
@@ -131,18 +143,66 @@ def binarize(img: np.ndarray) -> np.ndarray:
     return out
 
 
-def get_floor_ceiling(point_cloud: o3d.geometry.PointCloud, visualize: bool) \
+def get_floor_ceiling(name: str, point_cloud: o3d.geometry.PointCloud, visualize: bool) \
         -> tuple[o3d.geometry.OrientedBoundingBox, o3d.geometry.OrientedBoundingBox]:
     normal_criteria = np.array([0, 0, 1])  # This is an example, adjust it to your needs
+    print()
     point_cloud.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
 
-    indices = []
-    for i, normal in enumerate(point_cloud.normals):
-        dot_product = np.dot(normal, normal_criteria)
-        if dot_product > 0.9 or dot_product < -0.9:
-            indices.append(i)
+    normals = np.array(point_cloud.normals)
+    dot_products = np.dot(normals, normal_criteria)
+    indices = np.where((dot_products > 0.9) | (dot_products < -0.9))[0]
 
-    filtered_point_cloud = point_cloud.select_by_index(indices)
+    filtered_point_cloud: o3d.geometry.PointCloud = point_cloud.select_by_index(indices)
+    # build knn tree
+    kdtree_param: o3d.geometry.KDTreeSearchParamHybrid = o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30)
+    pcd_tree = o3d.geometry.KDTreeFlann(filtered_point_cloud)
+    filtered_bbox_max = filtered_point_cloud.get_max_bound()
+    filtered_bbox_min = filtered_point_cloud.get_min_bound()
+    res = 0.4
+    map_w = int((filtered_bbox_max[0] - filtered_bbox_min[0]) / res + 1)
+    map_h = int((filtered_bbox_max[1] - filtered_bbox_min[1]) / res + 1)
+    count_map = np.zeros((map_w, map_h))
+    indices2 = []
+
+    for i, p in enumerate(filtered_point_cloud.points):
+        if(i%64!=0):
+            continue
+        x_index = int((p[0] - filtered_bbox_min[0]) / (filtered_bbox_max[0] - filtered_bbox_min[0])*(map_w-1))
+        y_index = int((p[1] - filtered_bbox_min[1]) / (filtered_bbox_max[1] - filtered_bbox_min[1]) *(map_h-1))
+        count_map[x_index, y_index] += 1
+
+    # Find the indices of the elements that are greater than the threshold
+    indices = np.argwhere(count_map > 50)
+    # Find the minimum and maximum indices
+    min_indices = indices.min(axis=0)
+    max_indices = indices.max(axis=0) + 1
+    
+    plt.hist(count_map,edgecolor='black')
+    plt.savefig(rel2abs_Path("output_data/{}_histogram.png".format(getBaseNameWithoutExtension(name))))
+    plt.close()
+
+
+    # 创建一个新的图像
+    fig, ax = plt.subplots()
+
+    # 显示图像
+    ax.imshow(count_map, cmap='hot')
+
+    rect = patches.Rectangle((min_indices[0],min_indices[1]), min_indices[0]-max_indices[0], min_indices[1]-max_indices[1], edgecolor='r', facecolor='none')
+
+    # 将矩形框添加到图像上
+    ax.add_patch(rect)
+
+    # 保存图像到文件
+    plt.savefig(rel2abs_Path("output_data/{}_densitymap.png".format(getBaseNameWithoutExtension(name))))
+    
+    #
+    # for i, p in enumerate(filtered_point_cloud.points):
+    #     [k, _, _] = pcd_tree.search_vector_3d(filtered_point_cloud.points[i], kdtree_param)
+    #     if k >= 20:
+    #         indices2.append(i)
+    # filtered_point_cloud = filtered_point_cloud.select_by_index(indices2)
 
     oboxes = filtered_point_cloud.detect_planar_patches(
         normal_variance_threshold_deg=35,
@@ -163,33 +223,39 @@ def get_floor_ceiling(point_cloud: o3d.geometry.PointCloud, visualize: bool) \
         floor = max2
         ceiling = max1
     geometries = []
-    for obox in (floor, ceiling):
-        if isinstance(obox, o3d.geometry.OrientedBoundingBox):
-            obox.get_min_bound()
-            obox.get_max_bound()
-            mesh = o3d.geometry.TriangleMesh.create_from_oriented_bounding_box(obox, scale=[1, 1, 0.001])
-            mesh.paint_uniform_color(obox.color)
-            geometries.append(mesh)
-            geometries.append(obox)
-    geometries.append(filtered_point_cloud)
-    if visualize:
-        o3d.visualization.draw_geometries(geometries)
+    # for obox in (floor, ceiling):
+    #     if isinstance(obox, o3d.geometry.OrientedBoundingBox):
+    #         obox.get_min_bound()
+    #         obox.get_max_bound()
+    #         mesh = o3d.geometry.TriangleMesh.create_from_oriented_bounding_box(obox, scale=[1, 1, 0.001])
+    #         mesh.paint_uniform_color(obox.color)
+    #         geometries.append(mesh)
+    #         geometries.append(obox)
+    # geometries.append(filtered_point_cloud)
+    # if visualize:
+    #     o3d.visualization.draw_geometries(geometries)
 
     # extend the floor and ceiling
     floor: o3d.geometry.AxisAlignedBoundingBox = floor.get_axis_aligned_bounding_box()
     ceiling: o3d.geometry.AxisAlignedBoundingBox = ceiling.get_axis_aligned_bounding_box()
 
-    bbox = point_cloud.get_axis_aligned_bounding_box()
-    xmin, ymin, zmin = bbox.get_min_bound()
-    xmax, ymax, zmax = bbox.get_max_bound()
+    # bbox = filtered_point_cloud.get_axis_aligned_bounding_box()
+    # xmin, ymin, zmin = bbox.get_min_bound()
+    # xmax, ymax, zmax = bbox.get_max_bound()
+    xmin = min_indices[0] * res + filtered_bbox_min[0]
+    ymin = min_indices[1] * res + filtered_bbox_min[1]
+    xmax = max_indices[0] * res + filtered_bbox_min[0]
+    ymax = max_indices[1] * res + filtered_bbox_min[1]
     extend_floor = o3d.geometry.AxisAlignedBoundingBox(
-        min_bound=(xmin, ymin, floor.get_min_bound()[2]-0.05),
-        max_bound=(xmax, ymax, floor.get_max_bound()[2]+0.05))
+        min_bound=(xmin, ymin, floor.get_min_bound()[2] - 0.05),
+        max_bound=(xmax, ymax, floor.get_max_bound()[2] + 0.05))
 
     extend_ceiling = o3d.geometry.AxisAlignedBoundingBox(
-        min_bound=(xmin, ymin, ceiling.get_min_bound()[2]-0.3),
-        max_bound=(xmax, ymax, ceiling.get_max_bound()[2]+3))
-
+        min_bound=(xmin, ymin, ceiling.get_min_bound()[2] - 0.3),
+        max_bound=(xmax, ymax, ceiling.get_max_bound()[2] + 3))
+    print(name)
+    print(extend_floor.get_min_bound(), extend_floor.get_max_bound())
+    print(extend_ceiling.get_min_bound(), extend_ceiling.get_max_bound())
     return extend_floor, extend_ceiling
 
 
@@ -207,11 +273,11 @@ def extract_planes_point(
 
 Path = "/home/lzq/Desktop/LAZ_test"
 if __name__ == "__main__":
-    #process_pc("/media/lzq/Windows/Users/14318/scan2bim2024/3d/test/2cm/25_Parking_01_F1.ply", True, res=0.075)
+    process_pc("/home/lzq/Desktop/LAZ_test/34_Parking_04_F1.ply", True, res=0.075)
     # get all clouds in the folder
     for file in os.listdir(Path):
         if file.endswith(".ply"):
-            process_pc(f"{Path}/{file}", False,res=0.02)
+            process_pc(f"{Path}/{file}", False, res=0.02)
 # 11_MedOffice_05_F4 have problem --> solved
 # 25_Parking_01_F1 floor detection problem -> ceiling solved floor unsolved -->solved
 # 25_Parking_01_F2 floor detection problem  -->solved

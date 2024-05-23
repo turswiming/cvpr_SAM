@@ -53,7 +53,7 @@ def combinechannel(name):
     cv2.imwrite(path+"/temp/"+name+"_ceiling_high_adjustcolor.png", img1)
     cv2.imwrite(path+"/temp/"+name+"_ceiling_low_adjustcolor.png", img2)
     cv2.imwrite(path+"/temp/"+name+"_floor_high_adjustcolor.png", img3)
-    seg = Seg('model_weight/sam_vit_h_4b8939.pth')
+    seg = Seg("vit_h",'model_weight/sam_vit_h_4b8939.pth')
     mask1 = seg.segment(path+"/temp/"+name+"_ceiling_high_adjustcolor.png", path+"/"+name+"_ceiling_high_segmented.png",True)
     mask2 = seg.segment(path+"/temp/"+name+"_ceiling_low_adjustcolor.png", path+"/"+name+"_ceiling_low_segmented.png",True)
     mask3 = seg.segment(path+"/temp/"+name+"_floor_high_adjustcolor.png", path+"/"+name+"_floor_high_segmented.png")
@@ -87,7 +87,6 @@ for file in os.listdir(path):
 set_names = set(names)
 names = list(set_names)
 list.sort(names)
-combinechannel("11_MedOffice_05_F4")
 for name in names:
     combinechannel(name)
 

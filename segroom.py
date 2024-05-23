@@ -7,12 +7,18 @@ from skimage.transform import rescale
 from skimage.filters.rank import minimum
 from skimage.morphology import disk, ball
 from skimage import img_as_ubyte
-
+import cv2
 import numpy as np
+import json
+
+def getName(path: str)->str:
+    name = os.path.basename(path)
+    names = name.split('_')[0:4]
+    return '_'.join(names)
 
 class Seg:
-    def __init__(self, model_path):
-        self.sam = sam_model_registry["vit_h"](checkpoint=model_path)
+    def __init__(self, type,model_path):
+        self.sam = sam_model_registry[type](checkpoint=model_path)
         self.sam.to(device='cuda')
         self.predictor = SamPredictor(self.sam)
 
@@ -41,37 +47,44 @@ class Seg:
 
         return rescaled
     
-    def segment(self, read_path: str, save_path: str,min_resize=False)->list[dict[str, any]]:
+    def segment(self, read_path: str, save_path: str,mask_generator: SamAutomaticMaskGenerator)->list[dict[str, any]]:
         img = Image.open(read_path)
-        # Resize the image so that the long side is 1024
-        # long_side = max(img.size)
-        # scale_factor = 2000 / long_side
-        # new_size = (round(img.size[0] * scale_factor), round(img.size[1] * scale_factor))
-        # if min_resize:
-        #     skimage_image = np.array(img)
-        #     skimage_image = self.min_resize(skimage_image, new_size)
-        #     img = Image.fromarray(skimage_image.astype(np.uint8))
-        # else:
-        #     img = img.resize(new_size, Image.BOX)
-        # plt.imsave('output_data/seg_room/resized.png', np.array(img))
+        
+        name = getName(read_path)
+        
+        with open(path+"/"+name+"_bbox.json", 'r') as f:
+            data = json.load(f)
+        ceiling_high = data["ceiling"]["max"][2]
+        ceiling_low = data["ceiling"]["min"][2]
+        if "_ceiling_" in read_path:
+            img = np.array(img)
+            img = (img*(ceiling_high-ceiling_low)/(ceiling_high-ceiling_low-3.3)).astype(np.uint8)
+            img = Image.fromarray(img)
+            
+        img = np.array(img)
+        img_inv = cv2.bitwise_not(img)
+        edges = cv2.Canny(img_inv, 245, 200, apertureSize=3)
+
+        img_inv = cv2.bitwise_not(img)
+        lines = cv2.HoughLinesP(edges, 1, np.pi/180, 105, minLineLength=35, maxLineGap=10)
+        for line in lines:
+            x1, y1, x2, y2 = line[0]
+            if x2 - x1 != 0:
+                slope = (y2 - y1) / (x2 - x1)
+            else:
+                slope = float('inf')
+            if abs(x2 - x1)+abs(y2 - y1) > img.shape[0]*0.1:
+                continue
+            if abs(slope) > 0.02 and abs(slope) < 50:
+                continue
+            cv2.line(img, (x1, y1), (x2, y2), (0,0, 0), 4)
+        img= Image.fromarray(img)
 
         img_rgb = img.convert('RGB')
-        # Convert the image to a numpy array
         img_np = np.array(img_rgb)
-        max_size = max(img_np.shape[0],img_np.shape[1])
-        mask_generator: SamAutomaticMaskGenerator = SamAutomaticMaskGenerator(
-            model=self.sam,
-            points_per_side= max_size/60,# another magic number, but it works perfectly
-            points_per_batch= 32, #fit 16g vram perfectly
-            pred_iou_thresh= 0.92,
-            stability_score_thresh=0.75,
-            crop_n_layers=0,
-            crop_n_points_downscale_factor=1,
-            min_mask_region_area=50,  # Requires open-cv to run post-processing
-        )
+        
         masks = mask_generator.generate(img_np)
         print(len(masks))
-        print(masks[0].keys())
         plt.figure(figsize=(20,20))
         plt.imshow(img_np*0.2)
         show_anns(masks)
@@ -101,13 +114,31 @@ def show_anns(anns):
         img[m] = color_mask
     ax.imshow(img)
 
+
+            
+#现对单个通道进行分解，统计分解数量，越少的权重越高
+
 # Read the image file
+path = "output_data"
 
 if __name__ == '__main__':
-    seg = Seg('model_weight/sam_vit_h_4b8939.pth')
+    seg = Seg("vit_h",'model_weight/sam_vit_h_4b8939.pth')
+    mask_generator = SamAutomaticMaskGenerator(
+                model=seg.sam,
+                points_per_side= 32,# another magic number, but it works perfectly
+                points_per_batch= 55, #fit 16g vram perfectly
+                pred_iou_thresh= 0.88,
+                stability_score_thresh=0.6, #origin 0.7
+                stability_score_offset = -1,
+                box_nms_thresh = 0.4, #origin 0.7
+
+                crop_n_layers=0,
+                min_mask_region_area=100,  # Requires open-cv to run post-processing
+            )
     path = 'output_data/'
     for file in os.listdir(path):
-        if file.endswith('_lab_image.png') or file.endswith('_rgb_image.png'):
-            seg.segment(path + file, 'output_data/' + file + '_segmented.png')
-            
+        if file.endswith('_ceiling_high_img.png') or file.endswith('_floor_high_img.png'):
+            res = seg.segment(path + file, 'output_data/' + file + '_segmented.png',mask_generator)
+            np.save('output_data/' + getName(file) + '_segmented.npy', res)
+            print('Segmentation saved to', 'output_data/' + file + '_segmented.npy')
 #现对单个通道进行分解，统计分解数量，越少的权重越高

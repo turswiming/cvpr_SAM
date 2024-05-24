@@ -10,7 +10,7 @@ from skimage import img_as_ubyte
 import cv2
 import numpy as np
 import json
-
+import torch
 def getName(path: str)->str:
     name = os.path.basename(path)
     names = name.split('_')[0:4]
@@ -52,7 +52,7 @@ class Seg:
         
         name = getName(read_path)
         
-        with open(path+"/"+name+"_bbox.json", 'r') as f:
+        with open(path+name+"_bbox.json", 'r') as f:
             data = json.load(f)
         ceiling_high = data["ceiling"]["max"][2]
         ceiling_low = data["ceiling"]["min"][2]
@@ -61,28 +61,29 @@ class Seg:
             img = (img*(ceiling_high-ceiling_low)/(ceiling_high-ceiling_low-3.3)).astype(np.uint8)
             img = Image.fromarray(img)
             
-        img = np.array(img)
-        img_inv = cv2.bitwise_not(img)
-        edges = cv2.Canny(img_inv, 245, 200, apertureSize=3)
+        if "_2d" not in read_path:
+            img = np.array(img)
+            img_inv = cv2.bitwise_not(img)
+            edges = cv2.Canny(img_inv, 245, 200, apertureSize=3)
 
-        img_inv = cv2.bitwise_not(img)
-        lines = cv2.HoughLinesP(edges, 1, np.pi/180, 105, minLineLength=35, maxLineGap=10)
-        for line in lines:
-            x1, y1, x2, y2 = line[0]
-            if x2 - x1 != 0:
-                slope = (y2 - y1) / (x2 - x1)
-            else:
-                slope = float('inf')
-            if abs(x2 - x1)+abs(y2 - y1) > img.shape[0]*0.1:
-                continue
-            if abs(slope) > 0.02 and abs(slope) < 50:
-                continue
-            cv2.line(img, (x1, y1), (x2, y2), (0,0, 0), 4)
-        img= Image.fromarray(img)
+            img_inv = cv2.bitwise_not(img)
+            lines = cv2.HoughLinesP(edges, 1, np.pi/180, 105, minLineLength=35, maxLineGap=10)
+            for line in lines:
+                x1, y1, x2, y2 = line[0]
+                if x2 - x1 != 0:
+                    slope = (y2 - y1) / (x2 - x1)
+                else:
+                    slope = float('inf')
+                if abs(x2 - x1)+abs(y2 - y1) > img.shape[0]*0.1:
+                    continue
+                if abs(slope) > 0.02 and abs(slope) < 50:
+                    continue
+                cv2.line(img, (x1, y1), (x2, y2), (0,0, 0), 4)
+            img= Image.fromarray(img)
 
         img_rgb = img.convert('RGB')
         img_np = np.array(img_rgb)
-        
+        torch.cuda.empty_cache()
         masks = mask_generator.generate(img_np)
         print(len(masks))
         plt.figure(figsize=(20,20))
@@ -119,14 +120,14 @@ def show_anns(anns):
 #现对单个通道进行分解，统计分解数量，越少的权重越高
 
 # Read the image file
-path = "output_data"
+path = "output_data_2d"
 
 if __name__ == '__main__':
     seg = Seg("vit_h",'model_weight/sam_vit_h_4b8939.pth')
     mask_generator = SamAutomaticMaskGenerator(
                 model=seg.sam,
                 points_per_side= 32,# another magic number, but it works perfectly
-                points_per_batch= 55, #fit 16g vram perfectly
+                points_per_batch= 5, #fit 16g vram perfectly
                 pred_iou_thresh= 0.88,
                 stability_score_thresh=0.6, #origin 0.7
                 stability_score_offset = -1,
@@ -135,10 +136,13 @@ if __name__ == '__main__':
                 crop_n_layers=0,
                 min_mask_region_area=100,  # Requires open-cv to run post-processing
             )
-    path = 'output_data/'
+    path = 'output_data_2d/'
     for file in os.listdir(path):
         if file.endswith('_ceiling_high_img.png') or file.endswith('_floor_high_img.png'):
-            res = seg.segment(path + file, 'output_data/' + file + '_segmented.png',mask_generator)
-            np.save('output_data/' + getName(file) + '_segmented.npy', res)
-            print('Segmentation saved to', 'output_data/' + file + '_segmented.npy')
+            if file + '_segmented.png' in os.listdir(path):
+                continue
+
+            res = seg.segment(path + file, 'output_data_2d/' + file + '_segmented.png',mask_generator)
+            np.save('output_data_2d/' + getName(file) + '_segmented.npy', res)
+            print('Segmentation saved to', 'output_data_2d/' + file + '_segmented.npy')
 #现对单个通道进行分解，统计分解数量，越少的权重越高

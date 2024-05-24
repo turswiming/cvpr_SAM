@@ -5,7 +5,14 @@ import cv2
 from skimage.measure import block_reduce
 
 def downscale_max(image, block_size):
-    small = block_reduce(image, block_size=(block_size, block_size), func=np.max)
+    # 如果image是一个二维数组
+    if image.ndim == 2:
+        small = block_reduce(image, block_size=(block_size, block_size), func=np.max)
+    # 如果image是一个三维数组
+    elif image.ndim == 3:
+        small = block_reduce(image, block_size=(block_size, block_size, 1), func=np.max)
+    else:
+        raise ValueError("Unsupported image dimensions: %d" % image.ndim)
     return small
 
 def split_masks(mask):
@@ -52,12 +59,16 @@ def is_occolution(mask:np.ndarray,height_map:np.ndarray)->bool: #min_y,min_x,max
     num_samples=5
     true_indices = np.argwhere(mask)
     sampled_indices = true_indices[np.random.choice(true_indices.shape[0], num_samples, replace=False)]
+    occolution_size = 0
     for index in sampled_indices:
         if height_map[
-            index[0]/mask.shape[0]*height_map.shape[0],
-            index[1]/mask.shape[1]*height_map.shape[1]
-            ] < 0.5:
-            return True
+            int(index[0]/mask.shape[0]*height_map.shape[0]),
+            int(index[1]/mask.shape[1]*height_map.shape[1])
+            ][0] < 0.5:
+            occolution_size+=1
+    if occolution_size > num_samples/2:
+        return True
+    return False
     
     
 
@@ -128,35 +139,37 @@ def processnpy(masks:np.ndarray,name:str)->np.ndarray:
     for mask in new_masks_temp:
         if np.sum(mask) > 1000:
             new_masks.append(mask)
-        
-    potential_connection = []
-    bbox ={}
-    for i in range(len(new_masks)):
-        j = i+1
-        while j < len(new_masks):
-            if bbox.get(i) is None:
-                bbox[i] = calculatebbox(new_masks[i])
-            if bbox.get(j) is None:
-                bbox[j] = calculatebbox(new_masks[j])  #shape[0]:y, shape[1]:x
-            if bboxcollide(bbox[i],bbox[j]):    #min_y,min_x,max_y,max_x
-                potential_connection.append([i,j])
-            j += 1
-    true_connection = []
-    for i in potential_connection:
-        a = new_masks[i[0]]
-        b = new_masks[i[1]]
-        if realconnection(a,b):
-            true_connection.append(i)
-    drawconnection(true_connection,bbox,new_masks)
-    #check if a new masks mask a 
     occolution_filtered_masks = []
     img= cv2.imread('output_data/'+name+'_ceiling_high_img.png')
     ratio = 16
     img = downscale_max(img,ratio)
     for mask in new_masks:
-        
         if not is_occolution(mask,img):
             occolution_filtered_masks.append(mask)
+            
+    potential_connection = []
+    bbox ={}
+    for i in range(len(occolution_filtered_masks)):
+        j = i+1
+        while j < len(occolution_filtered_masks):
+            if bbox.get(i) is None:
+                bbox[i] = calculatebbox(occolution_filtered_masks[i])
+            if bbox.get(j) is None:
+                bbox[j] = calculatebbox(occolution_filtered_masks[j])  #shape[0]:y, shape[1]:x
+            if bboxcollide(bbox[i],bbox[j]):    #min_y,min_x,max_y,max_x
+                potential_connection.append([i,j])
+            j += 1
+            
+    true_connection = []
+    for i in potential_connection:
+        a = occolution_filtered_masks[i[0]]
+        b = occolution_filtered_masks[i[1]]
+        if realconnection(a,b):
+            true_connection.append(i)
+    drawconnection(true_connection,bbox,new_masks)
+    #check if a new masks mask a 
+    
+            
     
 if __name__ == '__main__':    
     path = 'output_data/'

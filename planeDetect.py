@@ -8,7 +8,10 @@ import cv2
 import heightlowmap
 import json
 from concurrent.futures import ThreadPoolExecutor
-
+def getName(path: str)->str:
+    name = os.path.basename(path)
+    names = name.split('_')[0:4]
+    return '_'.join(names)
 
 class Subimage:
     def __init__(self, bias_x: int, bias_y: int, width: int, height: int, img: np.ndarray):
@@ -56,7 +59,7 @@ def to_fill(subimage: Subimage, res: float) -> bool:
 def process_pc(cloud_path: str, visualize: bool = False, res: float = 0.15):
     point_cloud: o3d.geometry.PointCloud = o3d.io.read_point_cloud(cloud_path)
     # GET FILE NAME without extension
-    file_name = os.path.splitext(os.path.basename(cloud_path))[0]
+    file_name = getName(cloud_path)
     if (not point_cloud.has_normals()):
         point_cloud.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
 
@@ -68,17 +71,18 @@ def process_pc(cloud_path: str, visualize: bool = False, res: float = 0.15):
         "ceiling": {"min": [ceiling_bb.get_min_bound()[0], ceiling_bb.get_min_bound()[1], ceiling_bb.get_min_bound()[2]]
             , "max": [ceiling_bb.get_max_bound()[0], ceiling_bb.get_max_bound()[1], ceiling_bb.get_max_bound()[2]]}
     }
-    with open("output_data/{}_bbox.json".format(file_name), 'w') as f:
+    with open("output_data_2d/{}_bbox.json".format(file_name), 'w') as f:
         json.dump(bb_data, f)
     floor_pcd, ceiling_bb = extract_planes_point(point_cloud, floor_bb, ceiling_bb, visualize)
 
     floor_high, floor_low = heightlowmap.get_high_low_img(floor_pcd, res)
     ceiling_high, ceiling_low = heightlowmap.get_high_low_img(ceiling_bb, res)
     # save the images
-    cv2.imwrite(rel2abs_Path("output_data/{}_floor_high_img.png".format(file_name)), floor_high)
-    cv2.imwrite(rel2abs_Path("output_data/{}_floor_low_img.png".format(file_name)), floor_low)
-    cv2.imwrite(rel2abs_Path("output_data/{}_ceiling_high_img.png".format(file_name)), ceiling_high)
-    cv2.imwrite(rel2abs_Path("output_data/{}_ceiling_low_img.png".format(file_name)), ceiling_low)
+    print("saving images")
+    cv2.imwrite(rel2abs_Path("output_data_2d/{}_floor_high_img.png".format(file_name)), floor_high)
+    cv2.imwrite(rel2abs_Path("output_data_2d/{}_floor_low_img.png".format(file_name)), floor_low)
+    cv2.imwrite(rel2abs_Path("output_data_2d/{}_ceiling_high_img.png".format(file_name)), ceiling_high)
+    cv2.imwrite(rel2abs_Path("output_data_2d/{}_ceiling_low_img.png".format(file_name)), ceiling_low)
 
     # cv use 0~1 while plt con`t care
     # cv2.imwrite(rel2abs_Path("output_data/{}_ceiling_low_bi_img.png".format(file_name)), ceiling_low_bi)
@@ -182,7 +186,7 @@ def get_floor_ceiling(name: str, point_cloud: o3d.geometry.PointCloud, visualize
     ymax = max_indices[1] * res + filtered_bbox_min[1]
     
     plt.hist(count_map, edgecolor='black')
-    plt.savefig(rel2abs_Path("output_data/{}_histogram.png".format(getBaseNameWithoutExtension(name))))
+    plt.savefig(rel2abs_Path("output_data_2d/{}_histogram.png".format(getName(name))))
     plt.close()
 
     fig, ax = plt.subplots()
@@ -194,7 +198,7 @@ def get_floor_ceiling(name: str, point_cloud: o3d.geometry.PointCloud, visualize
         edgecolor='r',
         facecolor='none')
     ax.add_patch(rect)
-    plt.savefig(rel2abs_Path("output_data/{}_densitymap.png".format(getBaseNameWithoutExtension(name))))
+    plt.savefig(rel2abs_Path("output_data_2d/{}_densitymap.png".format(getName(name))))
     plt.close()
     
     filtered_point_cloud = filtered_point_cloud.crop(
@@ -210,7 +214,7 @@ def get_floor_ceiling(name: str, point_cloud: o3d.geometry.PointCloud, visualize
         coplanarity_deg=60,
         outlier_ratio=3,
         min_plane_edge_length=4,
-        min_num_points=1200,
+        min_num_points=400,
         search_param=o3d.geometry.KDTreeSearchParamKNN(knn=30))
     print("Detected {} patches".format(len(oboxes)))
 
@@ -252,16 +256,17 @@ def extract_planes_point(
         floor: o3d.geometry.OrientedBoundingBox,
         ceiling: o3d.geometry.OrientedBoundingBox,
         visualize: bool = False) \
-        -> tuple[o3d.geometry.PointCloud, o3d.geometry.PointCloud]:
+        -> tuple[o3d.geometry.PointCloud
+        , o3d.geometry.PointCloud]:
     floor_point_cloud = pcd.crop(floor)
     ceiling_point_cloud = pcd.crop(ceiling)
 
     return floor_point_cloud, ceiling_point_cloud
 
 
-Path = "/home/lzq/Desktop/LAZ_test"
+Path = "/media/lzq/Windows/Users/14318/scan2bim2024/2d/test/2cm"
 if __name__ == "__main__":
-    #process_pc("/home/lzq/Desktop/LAZ_test/34_Parking_04_F1.ply", True, res=0.075)
+    process_pc("/media/lzq/Windows/Users/14318/scan2bim2024/2d/test/2cm/02_TallOffice_01_F13_s0p01m.ply", True, res=0.02)
     # get all clouds in the folder
     for file in os.listdir(Path):
         if file.endswith(".ply"):

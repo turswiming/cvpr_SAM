@@ -76,7 +76,9 @@ def drawconnection(connection:list[tuple[int,int]],bbox:dict[tuple[int,int,int,i
     # Create a color label image
     mask1 = masks[0]
     color_label_img = np.ones((mask1.shape[0], mask1.shape[1], 3), dtype=np.uint8)
-
+    
+    
+    
     for i, mask_data in enumerate(masks):
         # Generate a random color
         color = np.random.randint(0, 256, 3)
@@ -126,6 +128,14 @@ def processnpy(masks:np.ndarray,name:str)->np.ndarray:
     score = []
     size = []
     masks = sorted(masks, key=compare_mask_data)
+    firstMask = masks[0]["segmentation"]
+    stability_score_map = np.zeros((firstMask.shape[0], firstMask.shape[1]), dtype=np.float32)
+    #add mask and stability score to the stability_score_map
+    for mask_info in masks:
+        mask = mask_info["segmentation"]
+        stability_score = mask_info["stability_score"]
+        stability_score_map[mask] = np.maximum(stability_score_map,stability_score)
+    
     for mask in masks:
         score.append(mask["stability_score"])
         size.append(mask["area"])

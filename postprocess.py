@@ -51,9 +51,10 @@ def plot_stability_scores(scores):
     plt.show()
 
 def bboxcollide(bbox1:tuple[int,int,int,int],bbox2:tuple[int,int,int,int])->bool: #min_y,min_x,max_y,max_x
-    if bbox1[0] < bbox2[2] and bbox1[2] > bbox2[0] and bbox1[1] < bbox2[3] and bbox1[3] > bbox2[1]:
-        return True
-    return False
+    min_y1, min_x1, max_y1, max_x1 = bbox1
+    min_y2, min_x2, max_y2, max_x2 = bbox2
+
+    return not (min_y1 > max_y2 or min_y2 > max_y1 or min_x1 > max_x2 or min_x2 > max_x1)
 
 def is_occolution(mask:np.ndarray,height_map:np.ndarray)->bool: #min_y,min_x,max_y,max_x
     num_samples=5
@@ -103,23 +104,89 @@ def drawconnection(connection:list[tuple[int,int]],bbox:dict[tuple[int,int,int,i
     plt.close()
     
 
-def realconnection(mask1:np.ndarray,mask2:np.ndarray): #min_y,min_x,max_y,max_x
-    # Find contours in the masks
+def realconnection(mask1:np.ndarray,mask2:np.ndarray):
+    # Convert masks to uint8
     mask1 = mask1.astype(np.uint8)
     mask2 = mask2.astype(np.uint8)
-    contours1, _ = cv2.findContours(mask1, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    contours2, _ = cv2.findContours(mask2, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    # Check if any contour from mask1 intersects with any contour from mask2
-    for cnt1 in contours1:
-        for cnt2 in contours2:
-            # If intersection is not empty
-            intersection = cv2.intersectConvexConvex(cnt1, cnt2)
-            if intersection[1] is not None and intersection[1].any() > 0:
-                # Do something
-                return True
-                break
-    return False
+    # Erode the masks
+    kernel = np.ones((5,5),np.uint8)
+    mask1 = cv2.dilate(mask1, kernel, iterations = 1)
+    mask2 = cv2.dilate(mask2, kernel, iterations = 1)
+
+    intersection = cv2.bitwise_and(mask1, mask2)
+
+    # Check if there is any intersection
+    if np.any(intersection > 0):
+        return True
+    else:
+        return False
+
+def cutSingleConnection(connection:list[tuple[int,int]],masks:np.ndarray)\
+    ->tuple[list[int],np.ndarray,dict[tuple[int,int,int,int]]]:
+    single_connection_node = []
+    remove_node_indices = []
+    remove_connection_indices = []
+    for i in range(len(masks)):
+        count = 0
+        for j in connection:
+            if i in j:
+                count += 1
+        if count == 1:
+            single_connection_node.append(i)
+    for i in single_connection_node:
+        if masks[i].sum() < 50000:
+            #find the node it only connect to
+            for j in connection:
+                if i in j:
+                    if j[0] == i:
+                        other = j[1]
+                    else:
+                        other = j[0]
+                    break
+            masks[other] = masks[other] + masks[i]
+            remove_node_indices.append(i)
+    bbox = {}
+    new_masks = []
+    for i in range(len(masks)):
+        if i not in remove_node_indices:
+            new_masks.append(masks[i])        
+    new_connections,bbox = genConnection(new_masks)
+    return new_connections,new_masks,bbox
+    
+    
+def genConnection(masks:np.ndarray)->tuple[list[tuple[int,int]],dict[tuple[int,int,int,int]]]:
+    potential_connection = []
+    bbox ={}
+    for i in range(len(masks)):
+        j = i+1
+        while j < len(masks):
+            if bbox.get(i) is None:
+                bbox[i] = calculatebbox(masks[i])
+            if bbox.get(j) is None:
+                bbox[j] = calculatebbox(masks[j])  #shape[0]:y, shape[1]:x
+            if bboxcollide(bbox[i],bbox[j]):    #min_y,min_x,max_y,max_x
+                potential_connection.append([i,j])
+            j += 1
+    true_connection = []
+    for i in potential_connection:
+        a = masks[i[0]]
+        b = masks[i[1]]
+        if realconnection(a,b):
+            true_connection.append(i)
+    return true_connection,bbox
+            
+def split_stability_score_map(stability_score_map):
+    # Get all unique scores
+    unique_scores = np.unique(stability_score_map)
+
+    # Create a mask for each unique score
+    masks = []
+    for score in unique_scores:
+        mask = np.where(stability_score_map == score, 1, 0)
+        masks.append(mask)
+
+    return masks
 
 def processnpy(masks:np.ndarray,name:str)->np.ndarray:
     #print(masks[0].keys())# dict_keys(['segmentation', 'area', 'bbox', 'predicted_iou', 'point_coords', 'stability_score', 'crop_box'])
@@ -134,49 +201,32 @@ def processnpy(masks:np.ndarray,name:str)->np.ndarray:
     for mask_info in masks:
         mask = mask_info["segmentation"]
         stability_score = mask_info["stability_score"]
-        stability_score_map[mask] = np.maximum(stability_score_map,stability_score)
+        stability_score_map[mask] = np.maximum(stability_score_map[mask], stability_score)    
+    mask_cuted = split_stability_score_map(stability_score_map)
     
-    for mask in masks:
-        score.append(mask["stability_score"])
-        size.append(mask["area"])
-
-        mask = mask["segmentation"]
-        
+    for mask in mask_cuted:        
         new_masks.extend(split_masks(mask))
-    print(len(new_masks))
-    new_masks_temp = new_masks
-    new_masks =[]
-    for mask in new_masks_temp:
-        if np.sum(mask) > 1000:
-            new_masks.append(mask)
     occolution_filtered_masks = []
     img= cv2.imread('output_data/'+name+'_ceiling_high_img.png')
     ratio = 16
     img = downscale_max(img,ratio)
     for mask in new_masks:
-        if not is_occolution(mask,img):
+        # if not is_occolution(mask,img):
+        #if mask size is larger than 500
+        if np.sum(mask) > 500:
             occolution_filtered_masks.append(mask)
+    
+    true_connection,bbox = genConnection(occolution_filtered_masks)
+    
+    #drawconnection(true_connection,bbox,new_masks)
+
             
-    potential_connection = []
-    bbox ={}
-    for i in range(len(occolution_filtered_masks)):
-        j = i+1
-        while j < len(occolution_filtered_masks):
-            if bbox.get(i) is None:
-                bbox[i] = calculatebbox(occolution_filtered_masks[i])
-            if bbox.get(j) is None:
-                bbox[j] = calculatebbox(occolution_filtered_masks[j])  #shape[0]:y, shape[1]:x
-            if bboxcollide(bbox[i],bbox[j]):    #min_y,min_x,max_y,max_x
-                potential_connection.append([i,j])
-            j += 1
-            
-    true_connection = []
-    for i in potential_connection:
-        a = occolution_filtered_masks[i[0]]
-        b = occolution_filtered_masks[i[1]]
-        if realconnection(a,b):
-            true_connection.append(i)
-    drawconnection(true_connection,bbox,new_masks)
+    #cut single connection
+    #get node that connect to only one node another
+    print(len(occolution_filtered_masks))
+    cut_single_connection, masks, bbox = cutSingleConnection(true_connection,occolution_filtered_masks)
+    print(len(masks))
+    drawconnection(cut_single_connection,bbox,masks)
     #check if a new masks mask a 
     
             

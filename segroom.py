@@ -143,6 +143,6 @@ if __name__ == '__main__':
                 continue
 
             res = seg.segment(path + file, 'output_data_2d/' + file + '_segmented.png',mask_generator)
-            np.save('output_data_2d/' + getName(file) + '_segmented.npy', res)
-            print('Segmentation saved to', 'output_data_2d/' + file + '_segmented.npy')
+            np.save('output_data_2d/' + file + '_{}segmented.npy'.format(len(res)), res)
+            print('Segmentation saved to', 'output_data_2d/' + file + '_{}segmented.npy'.format(len(res)))
 #现对单个通道进行分解，统计分解数量，越少的权重越高

@@ -235,7 +235,7 @@ def newDetect(
 def get_floor_ceiling(name: str, point_cloud: o3d.geometry.PointCloud, visualize: bool,useNewDetect:bool) \
         -> tuple[o3d.geometry.OrientedBoundingBox, o3d.geometry.OrientedBoundingBox]:
     normal_criteria = np.array([0, 0, 1])  # This is an example, adjust it to your needs
-    res = 0.1
+    res = 0.4
     
     if not point_cloud.has_normals():
         point_cloud.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
@@ -251,18 +251,20 @@ def get_floor_ceiling(name: str, point_cloud: o3d.geometry.PointCloud, visualize
     map_h = int((filtered_bbox_max[1] - filtered_bbox_min[1]) / res + 1)
     map_d = int((filtered_bbox_max[2] - filtered_bbox_min[2]) / res + 1)
     count_map = np.zeros((map_w, map_h,map_d))
-    for i, p in enumerate(filtered_point_cloud.points):
-        if (i % 32 != 0):
-            continue
+    size = len(filtered_point_cloud.points)
+    i=0
+    while i < size:
+        p = filtered_point_cloud.points[i]
+        i+=320
         x_index = int((p[0] - filtered_bbox_min[0]) / (filtered_bbox_max[0] - filtered_bbox_min[0]) * (map_w - 1))
         y_index = int((p[1] - filtered_bbox_min[1]) / (filtered_bbox_max[1] - filtered_bbox_min[1]) * (map_h - 1))
         z_index = int((p[2] - filtered_bbox_min[2]) / (filtered_bbox_max[2] - filtered_bbox_min[2]) * (map_d - 1))
         count_map[x_index, y_index,z_index] = 1
-    kernel = np.ones((35, 35, 3))
+    kernel = np.ones((15, 15, 3))
     conv_result = convolve(count_map, kernel, mode='constant', cval=0.0)
     conv_result_max = np.max(conv_result)
-    value = np.percentile(conv_result[(conv_result >= 500) & (conv_result <= conv_result_max - 500)], 80)
-    indices = np.argwhere(conv_result >= value)#pow(res*10,2)*(40/16))#magic number, fit algrathm well 
+    value = np.percentile(conv_result[(conv_result >= 25) & (conv_result <= conv_result_max - 25)], 70)
+    indices = np.argwhere(conv_result >= value) # pow(res*10,2)*(40/16))#magic number, fit algrathm well 
     min_indices = indices.min(axis=0)
     max_indices = indices.max(axis=0) + 1
     xmin = min_indices[0] * res + filtered_bbox_min[0]
@@ -274,7 +276,7 @@ def get_floor_ceiling(name: str, point_cloud: o3d.geometry.PointCloud, visualize
         
         
         conv_result = np.sum(conv_result, axis=2) 
-        plt.hist(conv_result, edgecolor='black')
+        plt.hist(np.asarray(filtered_point_cloud.points)[::,2], edgecolor='black')
         plt.savefig(rel2abs_Path("output_data_2d/{}_histogram.png".format(getName(name))))
         plt.close()
 
@@ -298,7 +300,7 @@ def get_floor_ceiling(name: str, point_cloud: o3d.geometry.PointCloud, visualize
                 
         point_cloud.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
 
-        oboxes = filtered_point_cloud.detect_planar_patches(
+        oboxes = point_cloud.detect_planar_patches(
             normal_variance_threshold_deg=60,
             coplanarity_deg=60,
             outlier_ratio=0.5,
@@ -308,7 +310,7 @@ def get_floor_ceiling(name: str, point_cloud: o3d.geometry.PointCloud, visualize
         print("Detected {} patches".format(len(oboxes)))
 
         if len(oboxes) < 2:
-            oboxes = filtered_point_cloud.detect_planar_patches(
+            oboxes = point_cloud.detect_planar_patches(
                 normal_variance_threshold_deg=60,
                 coplanarity_deg=60,
                 outlier_ratio=1,
@@ -381,17 +383,33 @@ def extract_planes_point(
 
 Path = "/media/lzq/Windows/Users/14318/scan2bim2024/2d/test/2cm"
 if __name__ == "__main__":
-    process_pc("/media/lzq/Windows/Users/14318/scan2bim2024/2d/test/2cm/02_TallOffice_01_F7_s0p01m.ply", False, 0.02,False)
-    process_pc("/media/lzq/Windows/Users/14318/scan2bim2024/2d/test/2cm/25_Parking_01_F2_s0p01m.ply", False, 0.02,False)
-    exit(0)
+    # process_pc("/media/lzq/Windows/Users/14318/scan2bim2024/2d/test/2cm/25_Parking_01_F2_s0p01m.ply", False, 0.02,False)
+    # process_pc("/media/lzq/Windows/Users/14318/scan2bim2024/2d/test/2cm/02_TallOffice_01_F7_s0p01m.ply", False, 0.02,False)
+    # exit(0)
     # get all clouds in the folder
-    for file in os.listdir(Path):
+    from multiprocessing import Pool
+    import os
+    import argparse
+
+    def process_file(file):
         if file.endswith(".ply"):
             try:
-                process_pc(f"{Path}/{file}", False, 0.02,False)
+                process_pc(f"{Path}/{file}", True, 0.02,False)
             except CustomError as e:
                 print(e)
-                continue
+                
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument("Path", help="Path to the directory containing .ply files")
+    # parser.add_argument("file", help="File to process")
+    # args = parser.parse_args()
+
+    # Path = args.Path
+    # file = args.file
+
+    process_file("11_MedOffice_05_F3_s0p01m.ply")
+    # if __name__ == "__main__":
+    #     with Pool(os.cpu_count()) as p:
+    #         p.map(process_file, os.listdir(Path))
 # 11_MedOffice_05_F4 have problem --> solved
 # 25_Parking_01_F1 floor detection problem -> ceiling solved floor unsolved -->solved
 # 25_Parking_01_F2 floor detection problem  -->solved

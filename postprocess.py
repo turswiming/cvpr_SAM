@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import cv2
 from skimage.measure import block_reduce
+from collections import defaultdict
 
 
 def downscale_max(image, block_size):
@@ -62,8 +63,9 @@ def bboxcollide(bbox1: tuple[int, int, int, int], bbox2: tuple[int, int, int, in
     return not (min_y1 > max_y2 or min_y2 > max_y1 or min_x1 > max_x2 or min_x2 > max_x1)
 
 
-def is_occolution(mask: np.ndarray, ceiling_map: np.ndarray, floor_map: np.ndarray) -> bool:  # min_y,min_x,max_y,max_x
-    num_samples = 5
+def occlusion_percentage(mask: np.ndarray, ceiling_map: np.ndarray,
+                         floor_map: np.ndarray) -> float:  # min_y,min_x,max_y,max_x
+    num_samples = 100
     true_indices = np.argwhere(mask)
     sampled_indices = np.random.choice(true_indices.shape[0], min(num_samples, true_indices.shape[0]), replace=False)
     ceiling_size = 0
@@ -80,9 +82,7 @@ def is_occolution(mask: np.ndarray, ceiling_map: np.ndarray, floor_map: np.ndarr
             int(index[1] / mask.shape[1] * floor_map.shape[1])
         ] < 0.5:
             floor_size += 1
-    if ceiling_size * 0.7 + floor_size * 0.3 > num_samples / 1.7:
-        return True
-    return False
+    return (ceiling_size * 0.7 + floor_size * 0.3) / num_samples
 
 
 def drawconnection(connection: list[tuple[int, int]], bbox: dict[int, tuple[int, int, int, int]],
@@ -115,17 +115,17 @@ def drawconnection(connection: list[tuple[int, int]], bbox: dict[int, tuple[int,
     plt.close()
 
 
-def drawconnection(masks):  # min_y,min_x,max_y,max_x
-    mask1 = masks[0]
-    color_label_img = np.ones((mask1.shape[0], mask1.shape[1], 3), dtype=np.uint8)
-    for i, mask_data in enumerate(masks):
-        color = np.random.randint(0, 256, 3)
-        mask = mask_data
-        color_label_img[mask] = color_label_img[mask] * color
-
-    plt.imshow(color_label_img)
-    plt.show(block=True)
-    plt.close()
+# def drawconnection(masks):  # min_y,min_x,max_y,max_x
+#     mask1 = masks[0]
+#     color_label_img = np.ones((mask1.shape[0], mask1.shape[1], 3), dtype=np.uint8)
+#     for i, mask_data in enumerate(masks):
+#         color = np.random.randint(0, 256, 3)
+#         mask = mask_data
+#         color_label_img[mask] = color_label_img[mask] * color
+#
+#     plt.imshow(color_label_img)
+#     plt.show(block=True)
+#     plt.close()
 
 
 def realconnection(mask1: np.ndarray, mask2: np.ndarray):
@@ -203,36 +203,47 @@ def show_anns(anns):
     plt.show()
 
 
-def cutSingleConnection(connection: list[tuple[int, int]], masks: list[np.ndarray]) \
-        -> tuple[list[tuple[int, int]], list[np.ndarray], dict[int, tuple[int, int, int, int]]]:
-    single_connection_node = []
-    remove_node_indices = []
+def isRemovable(mask: np.ndarray) -> bool:
+    indices = np.where(mask >= 1)
+    if len(indices[0]) < 500:
+        return True
+    else:
+        if (indices[0].max() - indices[0].min()) < 20 or (indices[1].max() - indices[1].min()) < 20:
+            return True
+    return False
+
+
+def cut_small(connection: list[tuple[int, int]], masks: list[np.ndarray]) \
+        -> list[np.ndarray]:
+    remove_mask_indices = []
     for i in range(len(masks)):
-        count = 0
-        for j in connection:
-            if i in j:
-                count += 1
-        if count == 1:
-            single_connection_node.append(i)
-    for i in single_connection_node:
-        if masks[i].sum() < 500:
-            # find the node it only connect to
-            for j in connection:
-                if i in j:
-                    if j[0] == i:
-                        other = j[1]
-                    else:
-                        other = j[0]
-                    masks[other] = masks[other] + masks[i]
-                    break
-            remove_node_indices.append(i)
-    bbox: dict[int, tuple[int, int, int, int]] = {}
+        if isRemovable(masks[i]):
+            remove_mask_indices.append(i)
+            connects = []
+            for c in connection:
+                if c[0] == i:
+                    connects.append(c[1])
+                if c[1] == i:
+                    connects.append(c[0])
+            if len(connects) == 1:
+                masks[connects[0]] = masks[connects[0]] + masks[i]
+            else:
+                max_id = -1
+                maxvalue = -1
+                for maskID in connects:
+                    val = connectionsize(masks[maskID], masks[i])
+                    if val > maxvalue:
+                        maxvalue = val
+                        max_id = maskID
+                if max_id != -1:
+                    masks[max_id] = masks[max_id] + masks[i]
+
     new_masks = []
     for i in range(len(masks)):
-        if i not in remove_node_indices:
+        if i not in remove_mask_indices:
             new_masks.append(masks[i])
-    new_connections, bbox = genConnection(new_masks)
-    return new_connections, new_masks, bbox
+
+    return new_masks
 
 
 def genConnection(masks: list[np.ndarray]) -> tuple[list[tuple[int, int]], dict[int, tuple[int, int, int, int]]]:
@@ -270,6 +281,34 @@ def split_stability_score_map(stability_score_map):
     return masks
 
 
+def dfs(node, graph, visited):
+    visited.add(node)
+    size = 1
+    for neighbor in graph[node]:
+        if neighbor not in visited:
+            size += dfs(neighbor, graph, visited)
+    return size
+
+
+def largest_connected_component(connection):
+    # Convert the connection list to a graph
+    graph = defaultdict(list)
+    for node1, node2 in connection:
+        graph[node1].append(node2)
+        graph[node2].append(node1)
+
+    max_size = 0
+    max_component = None
+    for node in graph:
+        visited = set()
+        if node not in visited:
+            size = dfs(node, graph, visited)
+            if size > max_size:
+                max_size = size
+                max_component = visited.copy()
+    return max_component
+
+
 def processnpy(masks: np.ndarray, name: str) -> list[np.ndarray]:
     # print(masks[0].keys())
     # dict_keys(['segmentation', 'area', 'bbox', 'predicted_iou', 'point_coords', 'stability_score', 'crop_box'])
@@ -295,34 +334,51 @@ def processnpy(masks: np.ndarray, name: str) -> list[np.ndarray]:
     room_mask = np.zeros((firstMask.shape[0], firstMask.shape[1]), dtype=bool)
 
     print(len(masks))
-    connection, masks, bbox = cutSingleConnection(connection, occolution_filtered_masks)
+    masks = cut_small(connection, occolution_filtered_masks)
+    connection, bbox = genConnection(masks)
+
     print(len(masks))
-    # masks =  merge_long_connection(connection,masks,bbox)
-    # connection,bbox = genConnection(masks)
     for file in os.listdir('output_data_2d/'):
-        if "_ceiling_high_" in file:
+        if "_ceiling_high_" in file and file.endswith('_img.png'):
             if name in file:
-                ceiling_high__map = cv2.imread('output_data_2d/' + file, cv2.IMREAD_UNCHANGED)
+                ceiling_high_map = cv2.imread('output_data_2d/' + file, cv2.IMREAD_UNCHANGED)
                 break
     for file in os.listdir('output_data_2d/'):
-        if "_floor_low_" in file:
+        if "_floor_low_" in file and file.endswith('_img.png'):
             if name in file:
-                floor_low__map = cv2.imread('output_data_2d/' + file, cv2.IMREAD_UNCHANGED)
+                floor_low_map = cv2.imread('output_data_2d/' + file, cv2.IMREAD_UNCHANGED)
                 break
 
-    connection, masks, bbox = cutSingleConnection(connection, masks)
+    masks = cut_small(connection, masks)
     # CHECK IF MASKS ARE OCCOLUTED
-    room_masks = []
+    occlusion_percentages = []
     for mask in masks:
-        if is_occolution(mask, ceiling_high__map, floor_low__map):
-            occolution_mask = occolution_mask + mask
+        percentage = occlusion_percentage(mask, ceiling_high_map, floor_low_map)
+        occlusion_percentages.append(percentage)
+    # use kmeans to cluster the occlusion percentage
+    tenth_percentile = np.percentile(occlusion_percentages, 80)
+    room_masks = []
+    for i in range(len(occlusion_percentages)):
+        if occlusion_percentages[i] > tenth_percentile:
+            pass
         else:
-            room_mask = room_mask + mask
-            room_masks.append(mask)
-    # drawconnection(room_masks)
+            room_masks.append(masks[i])
+
     # SAVE THE MASKS
     print(len(room_masks))
+    room_masks_dilated = []
+    for room_mask in room_masks:
+        kernel = np.ones((5, 5), np.uint8)
+        room_mask_dilated = cv2.erode(room_mask.astype(np.uint8), kernel, iterations=1)
+
+        room_mask_dilated = cv2.dilate(room_mask_dilated.astype(np.uint8), kernel, iterations=1)
+        room_masks_dilated.append(room_mask_dilated)
+    connection, bbox = genConnection(room_masks)
+    largest_component = largest_connected_component(connection)
+    room_masks = [room_masks[i] for i in largest_component]
     np.save('output_mask/' + name + '_room_mask.npy', room_masks)
+    connection, bbox = genConnection(room_masks)
+    drawconnection(connection, bbox, room_masks)
 
     print("finish")
     return room_masks

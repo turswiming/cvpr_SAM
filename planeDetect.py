@@ -10,7 +10,8 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 from scipy.ndimage import convolve
-
+from scipy.ndimage.filters import uniform_filter1d
+from scipy.stats import trim_mean, trimboth
 #don`t touch magic number here
 #it test them and find the value fit the best
 
@@ -92,10 +93,10 @@ def process_pc(cloud_path: str, visualize: bool = False, res: float = 0.15,usene
     }
     with open("output_data_2d/{}_bbox.json".format(file_name), 'w') as f:
         json.dump(bb_data, f)
-    floor_pcd, ceiling_bb = extract_planes_point(point_cloud, floor_bb, ceiling_bb, visualize)
+    floor_pcd, ceiling_pcd = extract_planes_point(point_cloud, floor_bb, ceiling_bb, visualize)
 
-    floor_high, floor_low = heightlowmap.get_high_low_img(floor_pcd, res)
-    ceiling_high, ceiling_low = heightlowmap.get_high_low_img(ceiling_bb, res)
+    floor_high, floor_low = heightlowmap.get_high_low_img(floor_pcd,floor_bb, res)
+    ceiling_high, ceiling_low = heightlowmap.get_high_low_img(ceiling_pcd,ceiling_bb, res)
     # save the images
     print("saving images")
     cv2.imwrite(rel2abs_Path("output_data_2d/{}_floor_high_img.png".format(file_name)), floor_high)
@@ -276,10 +277,11 @@ def get_floor_ceiling(name: str, point_cloud: o3d.geometry.PointCloud, visualize
         
         
         conv_result = np.sum(conv_result, axis=2) 
-        plt.hist(np.asarray(filtered_point_cloud.points)[::,2], edgecolor='black')
+        heights = np.asarray(filtered_point_cloud.points)[::,2] # replace with your data
+
+        plt.hist(heights, edgecolor='black')
         plt.savefig(rel2abs_Path("output_data_2d/{}_histogram.png".format(getName(name))))
         plt.close()
-
         fig, ax = plt.subplots()
         ax.imshow(conv_result, cmap='hot')
         rect = patches.Rectangle(
@@ -303,9 +305,9 @@ def get_floor_ceiling(name: str, point_cloud: o3d.geometry.PointCloud, visualize
         oboxes = point_cloud.detect_planar_patches(
             normal_variance_threshold_deg=60,
             coplanarity_deg=60,
-            outlier_ratio=0.5,
-            min_plane_edge_length=4,
-            min_num_points=50,
+            outlier_ratio=3,
+            min_plane_edge_length=0.5,
+            min_num_points=75,
             search_param=o3d.geometry.KDTreeSearchParamKNN(knn=100))
         print("Detected {} patches".format(len(oboxes)))
 
@@ -314,8 +316,8 @@ def get_floor_ceiling(name: str, point_cloud: o3d.geometry.PointCloud, visualize
                 normal_variance_threshold_deg=60,
                 coplanarity_deg=60,
                 outlier_ratio=1,
-                min_plane_edge_length=4,
-                min_num_points=100,
+                min_plane_edge_length=2,
+                min_num_points=200,
                 search_param=o3d.geometry.KDTreeSearchParamKNN(knn=30))
             print("Detected {} patches".format(len(oboxes)))
             if len(oboxes) < 2:
@@ -323,7 +325,41 @@ def get_floor_ceiling(name: str, point_cloud: o3d.geometry.PointCloud, visualize
                 return None, None
         sorted_oboxes = sorted(oboxes, key=compare_oboxes)
         # Assuming sorted_oboxes is your sorted list
+        vertical_boxes = []
+
+        for box in sorted_oboxes:
+            # Assuming the coordinates are stored in box.coordinates
+            min_bound = box.get_min_bound()
+            max_bound = box.get_max_bound()
+
+            x_diff = max_bound[0] - min_bound[0]
+            y_diff = max_bound[1] - min_bound[1]
+            z_diff = max_bound[2] - min_bound[2]
+            if z_diff > 5:
+                continue
+            if z_diff < 2:
+                continue
+            if z_diff > x_diff or z_diff > y_diff:
+                # Assuming `rotation_matrix` is your rotation matrix
+                local_up_vector = np.array([0, 0, 1])
+
+                global_up_vector = np.dot(box.R, local_up_vector)
+
+                dot_products = np.dot(global_up_vector, local_up_vector)
+                if dot_products < 0.1 and dot_products > -0.1:
+                    vertical_boxes.append(box)
         
+        z_values_floor = np.array([box.get_min_bound()[2] for box in vertical_boxes])
+        median_floor = np.median(z_values_floor)
+        truncated_mean_floor = trim_mean(z_values_floor, 0.4)  # Truncate 10% at both ends
+        winsorized_mean_floor = np.mean(trimboth(z_values_floor, 0.4))  # Winsorize 10% at both ends
+        z_values_ceiling = np.array([box.get_max_bound()[2] for box in vertical_boxes])
+        median_ceiling = np.median(z_values_ceiling)
+        truncated_mean_ceiling = trim_mean(z_values_ceiling, 0.4)  # Truncate 10% at both ends
+        winsorized_mean_ceiling = np.mean(trimboth(z_values_ceiling, 0.4))  # Winsorize 10% at both ends
+        
+        
+        print(f"Found {len(vertical_boxes)} vertical boxes")
         max1: o3d.geometry.OrientedBoundingBox = sorted_oboxes[-1]  # Maximum value
         max2: o3d.geometry.OrientedBoundingBox = sorted_oboxes[-2]  # Second maximum value
         if max1.get_max_bound()[2] + max1.get_min_bound()[2] < max2.get_max_bound()[2] + max2.get_min_bound()[2]:
@@ -334,7 +370,7 @@ def get_floor_ceiling(name: str, point_cloud: o3d.geometry.PointCloud, visualize
             ceiling = max1
         if visualize:
             geometries = []
-            for obox in sorted_oboxes:
+            for obox in vertical_boxes:
                 if isinstance(obox, o3d.geometry.OrientedBoundingBox):
                     obox.get_min_bound()
                     obox.get_max_bound()
@@ -353,12 +389,12 @@ def get_floor_ceiling(name: str, point_cloud: o3d.geometry.PointCloud, visualize
         floor, ceiling = newDetect(point_cloud,visualize,name)
     
     extend_floor = o3d.geometry.AxisAlignedBoundingBox(
-        min_bound=(xmin, ymin, floor.get_min_bound()[2] - 0.05),
-        max_bound=(xmax, ymax, floor.get_max_bound()[2] + 0.05))
+        min_bound=(xmin, ymin, winsorized_mean_floor - 0.7),
+        max_bound=(xmax, ymax, winsorized_mean_floor + 0.3))
 
     extend_ceiling = o3d.geometry.AxisAlignedBoundingBox(
-        min_bound=(xmin, ymin, ceiling.get_min_bound()[2] - 0.3),
-        max_bound=(xmax, ymax, ceiling.get_max_bound()[2] + 3))
+        min_bound=(xmin, ymin, winsorized_mean_ceiling - 0.5),
+        max_bound=(xmax, ymax, winsorized_mean_ceiling + 3))
     
     
     print(extend_floor.get_min_bound(), extend_floor.get_max_bound())
@@ -381,7 +417,7 @@ def extract_planes_point(
     return floor_point_cloud, ceiling_point_cloud
 
 
-Path = "/media/lzq/Windows/Users/14318/scan2bim2024/2d/test/2cm"
+Path = "/media/lzq/Windows/Users/14318/scan2bim2024/2d/test/5cm"
 if __name__ == "__main__":
     # process_pc("/media/lzq/Windows/Users/14318/scan2bim2024/2d/test/2cm/25_Parking_01_F2_s0p01m.ply", False, 0.02,False)
     # process_pc("/media/lzq/Windows/Users/14318/scan2bim2024/2d/test/2cm/02_TallOffice_01_F7_s0p01m.ply", False, 0.02,False)
@@ -394,19 +430,19 @@ if __name__ == "__main__":
     def process_file(file):
         if file.endswith(".ply"):
             try:
-                process_pc(f"{Path}/{file}", True, 0.02,False)
+                process_pc(f"{Path}/{file}", False, 0.05,False)
             except CustomError as e:
                 print(e)
                 
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument("Path", help="Path to the directory containing .ply files")
-    # parser.add_argument("file", help="File to process")
-    # args = parser.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("Path", help="Path to the directory containing .ply files")
+    parser.add_argument("file", help="File to process")
+    args = parser.parse_args()
 
-    # Path = args.Path
-    # file = args.file
+    Path = args.Path
+    file = args.file
 
-    process_file("11_MedOffice_05_F3_s0p01m.ply")
+    process_file(file)
     # if __name__ == "__main__":
     #     with Pool(os.cpu_count()) as p:
     #         p.map(process_file, os.listdir(Path))

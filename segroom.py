@@ -56,10 +56,13 @@ class Seg:
             data = json.load(f)
         ceiling_high = data["ceiling"]["max"][2]
         ceiling_low = data["ceiling"]["min"][2]
-        if "_ceiling_" in read_path:
-            img = np.array(img)
-            img = (img*(ceiling_high-ceiling_low)/(ceiling_high-ceiling_low-3.3)).astype(np.uint8)
-            img = Image.fromarray(img)
+        img = np.array(img)
+        min_val = np.min(img)
+        max_val = np.max(img)
+
+        # Rescale the grayscale values to the range 0-255
+        img_rescaled = ((img - min_val) / (max_val - min_val) * 255).astype(np.uint8)
+        img = Image.fromarray(img_rescaled)
             
         if "_2d" not in read_path:
             img = np.array(img)
@@ -79,15 +82,17 @@ class Seg:
                 if abs(slope) > 0.02 and abs(slope) < 50:
                     continue
                 cv2.line(img, (x1, y1), (x2, y2), (0,0, 0), 4)
-            img= Image.fromarray(img)
 
-        img_rgb = img.convert('RGB')
-        img_np = np.array(img_rgb)
+        img = np.array(img)  # Convert PIL Image back to numpy array
+
+        img_rgb = cv2.applyColorMap(img, cv2.COLORMAP_HSV)
+
+        img_np = img_rgb
         torch.cuda.empty_cache()
         masks = mask_generator.generate(img_np)
         print(len(masks))
         plt.figure(figsize=(20,20))
-        plt.imshow(img_np*0.2)
+        plt.imshow(img*0.2)
         show_anns(masks)
         plt.axis('off')
         plt.savefig(save_path)
@@ -127,7 +132,7 @@ if __name__ == '__main__':
     mask_generator = SamAutomaticMaskGenerator(
                 model=seg.sam,
                 points_per_side= 32,# another magic number, but it works perfectly
-                points_per_batch= 5, #fit 16g vram perfectly
+                points_per_batch= 15, #fit 16g vram perfectly
                 pred_iou_thresh= 0.88,
                 stability_score_thresh=0.6, #origin 0.7
                 stability_score_offset = -1,
@@ -138,9 +143,7 @@ if __name__ == '__main__':
             )
     path = 'output_data_2d/'
     for file in os.listdir(path):
-        if file.endswith('_ceiling_high_img.png') or file.endswith('_floor_high_img.png'):
-            if file + '_segmented.png' in os.listdir(path):
-                continue
+        if file.endswith('_ceiling_high_img.png') or file.endswith('_floor_low_img.png'):
 
             res = seg.segment(path + file, 'output_data_2d/' + file + '_segmented.png',mask_generator)
             np.save('output_data_2d/' + file + '_{}segmented.npy'.format(len(res)), res)

@@ -1,5 +1,5 @@
 #!/bin/bash
-Path="/media/lzq/Windows/Users/14318/scan2bim2024/2d/test/2cm"
+Path="/media/lzq/Windows/Users/14318/scan2bim2024/2d/test/5cm"
 N=5
 
 # Get the list of files

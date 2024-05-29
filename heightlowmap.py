@@ -5,8 +5,9 @@ import matplotlib.pyplot as plt
 
 def get_high_low_img(
         point_cloud: o3d.geometry.PointCloud,
+        bb:o3d.geometry.AxisAlignedBoundingBox,
         resolution: float = 0.02) -> tuple[np.ndarray, np.ndarray]:
-    axis_bb: o3d.geometry.AxisAlignedBoundingBox = point_cloud.get_axis_aligned_bounding_box()
+    axis_bb = bb
     min_bb = axis_bb.get_min_bound()  # np.array[3,1]
     max_bb = axis_bb.get_max_bound()  # np.array[3,1]
     points = np.asarray(point_cloud.points)

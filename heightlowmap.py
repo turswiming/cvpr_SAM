@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 def get_high_low_img(
         point_cloud: o3d.geometry.PointCloud,
-        bb:o3d.geometry.AxisAlignedBoundingBox,
+        bb: o3d.geometry.AxisAlignedBoundingBox,
         resolution: float = 0.02) -> tuple[np.ndarray, np.ndarray]:
     axis_bb = bb
     min_bb = axis_bb.get_min_bound()  # np.array[3,1]
@@ -44,11 +44,11 @@ def get_high_low_img(
 def main():
     cloudPath = "input_data/02_TallOffice_01_F7_s0p01m.ply"
     base_path = "/media/lzq/Windows/Users/14318/scan2bim2024"
-    resolution = 0.02  #meters
+    resolution = 0.02  # meters
     point_cloud: o3d.geometry.PointCloud = o3d.io.read_point_cloud(cloudPath)
 
     height, low = get_high_low_img(point_cloud, resolution)
-    #save the images
+    # save the images
     plt.imsave("height_img.png", height)
     plt.imsave("lowest_img.png", low)
 

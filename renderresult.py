@@ -66,27 +66,29 @@ class Wall:
         mesh.triangles = o3d.utility.Vector3iVector(triangles)
         mesh.paint_uniform_color([0.5, 0.124, 0.4])
         return mesh
-#{
-    #     "id": 367243,
-    #     "start_pt": [
-    #         23.790154066836081,
-    #         -27.03618027157281,
-    #         0.0
-    #     ],
-    #     "end_pt": [
-    #         -20.737415322435009,
-    #         -27.03618027157281,
-    #         0.0
-    #     ],
-    #     "width": 0.2032,
-    #     "height": 2.8955999999995221,
-    #     "neighbor_wall_ids_at_start": [
-    #         369767
-    #     ],
-    #     "neighbor_wall_ids_at_end": [
-    #         394787
-    #     ]
-    # },
+
+
+# {
+#     "id": 367243,
+#     "start_pt": [
+#         23.790154066836081,
+#         -27.03618027157281,
+#         0.0
+#     ],
+#     "end_pt": [
+#         -20.737415322435009,
+#         -27.03618027157281,
+#         0.0
+#     ],
+#     "width": 0.2032,
+#     "height": 2.8955999999995221,
+#     "neighbor_wall_ids_at_start": [
+#         369767
+#     ],
+#     "neighbor_wall_ids_at_end": [
+#         394787
+#     ]
+# },
 def read_walls_from_json(json_path: str) -> list[Wall]:
     with open(json_path, "r") as file:
         data = json.load(file)
@@ -107,7 +109,6 @@ def read_walls_from_json(json_path: str) -> list[Wall]:
         return walls
 
 
-
 if __name__ == "__main__":
     walls = read_walls_from_json("/home/lzq/Downloads/train/json_train/05_MedOffice_01_F2_walls.json")
     for wall in walls:
@@ -116,7 +117,7 @@ if __name__ == "__main__":
             np.array([bbox.get_min_bound()[0], bbox.get_min_bound()[1], 3]),
             np.array([bbox.get_max_bound()[0], bbox.get_max_bound()[1], 3])
         )
-        wall.height=0.1
+        wall.height = 0.1
     wall_mesh_list = []
     for wall in walls:
         wall_mesh_list.append(wall.generate_mesh())

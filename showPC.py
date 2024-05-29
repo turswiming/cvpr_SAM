@@ -2,12 +2,12 @@ import os
 import open3d as o3d
 import numpy as np
 
-#read all the ply files in the folder
+# read all the ply files in the folder
 no_room_path = "/media/lzq/Windows/Users/14318/scan2bim2024/3d/test/2cm_rooms/11_MedOffice_05_F2/non_rooms"
 room_path = "/media/lzq/Windows/Users/14318/scan2bim2024/3d/test/2cm_rooms/11_MedOffice_05_F2"
 
 
-#using open3d read these file
+# using open3d read these file
 def read_ply_files_open3d(path):
     files = os.listdir(path)
     ply_files = []
@@ -26,5 +26,5 @@ for file in room_ply:
     for color in file.colors:
         color *= np.array([1, 0, 1])
 
-#show these point clouds
+# show these point clouds
 o3d.visualization.draw_geometries(no_room_ply + room_ply)

@@ -85,7 +85,7 @@ def is_occolution(mask: np.ndarray, ceiling_map: np.ndarray, floor_map: np.ndarr
     return False
 
 
-def drawconnection(connection: list[tuple[int, int]], bbox: dict[tuple[int, int, int, int]],
+def drawconnection(connection: list[tuple[int, int]], bbox: dict[int, tuple[int, int, int, int]],
                    masks):  # min_y,min_x,max_y,max_x
     # Create a color label image
     mask1 = masks[0]
@@ -116,17 +116,13 @@ def drawconnection(connection: list[tuple[int, int]], bbox: dict[tuple[int, int,
 
 
 def drawconnection(masks):  # min_y,min_x,max_y,max_x
-    # Create a color label image
     mask1 = masks[0]
     color_label_img = np.ones((mask1.shape[0], mask1.shape[1], 3), dtype=np.uint8)
     for i, mask_data in enumerate(masks):
-        # Generate a random color
         color = np.random.randint(0, 256, 3)
         mask = mask_data
-        # Apply the color to the mask
         color_label_img[mask] = color_label_img[mask] * color
 
-    # Display the color label image
     plt.imshow(color_label_img)
     plt.show(block=True)
     plt.close()
@@ -166,10 +162,10 @@ def connectionsize(mask1: np.ndarray, mask2: np.ndarray) -> int:
     return np.sum(intersection)
 
 
-def mergelongConnection(
+def merge_long_connection(
         connection: list[tuple[int, int]],
         masks: np.ndarray,
-        bbox: dict[tuple[int, int, int, int]]) -> np.ndarray:
+        bbox: dict[tuple[int, int, int, int]]) -> list[np.ndarray]:
     mask_sizes = {}
     for i in range(len(connection)):
         mask1 = masks[connection[i][0]]
@@ -207,8 +203,8 @@ def show_anns(anns):
     plt.show()
 
 
-def cutSingleConnection(connection: list[tuple[int, int]], masks: np.ndarray) \
-        -> tuple[list[int], np.ndarray, dict[tuple[int, int, int, int]]]:
+def cutSingleConnection(connection: list[tuple[int, int]], masks: list[np.ndarray]) \
+        -> tuple[list[tuple[int, int]], list[np.ndarray], dict[int, tuple[int, int, int, int]]]:
     single_connection_node = []
     remove_node_indices = []
     for i in range(len(masks)):
@@ -227,10 +223,10 @@ def cutSingleConnection(connection: list[tuple[int, int]], masks: np.ndarray) \
                         other = j[1]
                     else:
                         other = j[0]
+                    masks[other] = masks[other] + masks[i]
                     break
-            masks[other] = masks[other] + masks[i]
             remove_node_indices.append(i)
-    bbox = {}
+    bbox: dict[int, tuple[int, int, int, int]] = {}
     new_masks = []
     for i in range(len(masks)):
         if i not in remove_node_indices:
@@ -239,7 +235,7 @@ def cutSingleConnection(connection: list[tuple[int, int]], masks: np.ndarray) \
     return new_connections, new_masks, bbox
 
 
-def genConnection(masks: np.ndarray) -> tuple[list[tuple[int, int]], dict[tuple[int, int, int, int]]]:
+def genConnection(masks: list[np.ndarray]) -> tuple[list[tuple[int, int]], dict[int, tuple[int, int, int, int]]]:
     potential_connection = []
     bbox = {}
     for i in range(len(masks)):
@@ -250,9 +246,9 @@ def genConnection(masks: np.ndarray) -> tuple[list[tuple[int, int]], dict[tuple[
             if bbox.get(j) is None:
                 bbox[j] = calculatebbox(masks[j])  # shape[0]:y, shape[1]:x
             if bboxcollide(bbox[i], bbox[j]):  # min_y,min_x,max_y,max_x
-                potential_connection.append([i, j])
+                potential_connection.append((i, j))
             j += 1
-    true_connection = []
+    true_connection: list[tuple[int, int]] = []
     for i in potential_connection:
         a = masks[i[0]]
         b = masks[i[1]]
@@ -274,7 +270,7 @@ def split_stability_score_map(stability_score_map):
     return masks
 
 
-def processnpy(masks: np.ndarray, name: str) -> np.ndarray:
+def processnpy(masks: np.ndarray, name: str) -> list[np.ndarray]:
     # print(masks[0].keys())
     # dict_keys(['segmentation', 'area', 'bbox', 'predicted_iou', 'point_coords', 'stability_score', 'crop_box'])
     new_masks = []
@@ -301,7 +297,7 @@ def processnpy(masks: np.ndarray, name: str) -> np.ndarray:
     print(len(masks))
     connection, masks, bbox = cutSingleConnection(connection, occolution_filtered_masks)
     print(len(masks))
-    # masks =  mergelongConnection(connection,masks,bbox)
+    # masks =  merge_long_connection(connection,masks,bbox)
     # connection,bbox = genConnection(masks)
     for file in os.listdir('output_data_2d/'):
         if "_ceiling_high_" in file:
@@ -329,6 +325,7 @@ def processnpy(masks: np.ndarray, name: str) -> np.ndarray:
     np.save('output_mask/' + name + '_room_mask.npy', room_masks)
 
     print("finish")
+    return room_masks
 
 
 if __name__ == '__main__':

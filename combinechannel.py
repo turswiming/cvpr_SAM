@@ -47,7 +47,7 @@ def combinechannel(name):
         data = json.load(f)
     ceiling_high = data["ceiling"]["max"][2]
     ceiling_low = data["ceiling"]["min"][2]
-    # these magic numbers are the scale factors, come from chromatology theory
+    # these magic numbers are the scale factors, come from chronology theory
     img1 = normalizeImage(img1, (ceiling_high - ceiling_low) / (ceiling_high - ceiling_low - 3.15))  # A factor
     img2 = normalizeImage(img2, (ceiling_high - ceiling_low) / (ceiling_high - ceiling_low - 3.15))  # B factor
     img3 = normalizeImage(img3, 0.1)  # L factor

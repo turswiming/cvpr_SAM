@@ -11,6 +11,7 @@ import cv2
 import numpy as np
 import json
 import torch
+import shutil
 
 
 def getName(path: str) -> str:
@@ -98,9 +99,15 @@ class Seg:
         plt.imshow(img * 0.2)
         show_anns(masks)
         plt.axis('off')
-        plt.savefig(save_path)
+        plt.savefig(save_path + '_segmented.png')
         plt.close()
-        print('Segmentation saved to', save_path)
+        print('Segmentation saved to', save_path + '_segmented.png')
+        plt.figure(figsize=(20,20))
+        plt.imshow(img*0.01)
+        show_anns(masks)
+        plt.axis('off')
+        plt.savefig(save_path + '_segmented_pure.png')
+
         return masks
 
 
@@ -131,18 +138,31 @@ if __name__ == '__main__':
         model=seg.sam,
         points_per_side=32,  # another magic number, but it works perfectly
         points_per_batch=15,  # fit 16g vram perfectly
-        pred_iou_thresh=0.88,
+        pred_iou_thresh=0.80,
         stability_score_thresh=0.6,  # origin 0.7
         stability_score_offset=-1,
-        box_nms_thresh=0.4,  # origin 0.7
+        box_nms_thresh=0.5,  # origin 0.7
 
         crop_n_layers=0,
         min_mask_region_area=100,  # Requires open-cv to run post-processing
     )
     path = 'output_data_2d/'
+    save_path_prefix = "output_data_2d_"
+    maxnumber = 0
+    for file in os.listdir("./"):
+        if file.startswith(save_path_prefix):
+            number = int(file.removeprefix(save_path_prefix))
+            if number > maxnumber:
+                maxnumber = number
+    
+    os.mkdir(save_path_prefix+str(maxnumber+1))
+    save_path = save_path_prefix+str(maxnumber+1)+"/"
+    #copy this python file to save path
+    shutil.copy("./segroom.py", save_path)
+
     for file in os.listdir(path):
         if file.endswith('_ceiling_high_img.png') or file.endswith('_floor_low_img.png'):
-            res = seg.segment(path + file, 'output_data_2d/' + file + '_segmented.png', mask_generator)
-            np.save('output_data_2d/' + file + '_{}segmented.npy'.format(len(res)), res)
-            print('Segmentation saved to', 'output_data_2d/' + file + '_{}segmented.npy'.format(len(res)))
+            res = seg.segment(path + file, save_path + file, mask_generator)
+            np.save(save_path + file + '_new{}segmented.npy'.format(len(res)), res)
+            print('Segmentation saved to', save_path + file + '_new{}segmented.npy'.format(len(res)))
 # 现对单个通道进行分解，统计分解数量，越少的权重越高

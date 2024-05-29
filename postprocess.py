@@ -65,7 +65,7 @@ def bboxcollide(bbox1: tuple[int, int, int, int], bbox2: tuple[int, int, int, in
 
 def occlusion_percentage(mask: np.ndarray, ceiling_map: np.ndarray,
                          floor_map: np.ndarray) -> float:  # min_y,min_x,max_y,max_x
-    num_samples = 100
+    num_samples = 300
     true_indices = np.argwhere(mask)
     sampled_indices = np.random.choice(true_indices.shape[0], min(num_samples, true_indices.shape[0]), replace=False)
     ceiling_size = 0
@@ -75,14 +75,14 @@ def occlusion_percentage(mask: np.ndarray, ceiling_map: np.ndarray,
         if ceiling_map[
             int(index[0] / mask.shape[0] * ceiling_map.shape[0]),
             int(index[1] / mask.shape[1] * ceiling_map.shape[1])
-        ] < 0.5:
+        ] == 0:
             ceiling_size += 1
         if floor_map[
             int(index[0] / mask.shape[0] * floor_map.shape[0]),
             int(index[1] / mask.shape[1] * floor_map.shape[1])
-        ] < 0.5:
+        ] == 0:
             floor_size += 1
-    return (ceiling_size * 0.7 + floor_size * 0.3) / num_samples
+    return (ceiling_size * 0.9 + floor_size * 0.1) / num_samples
 
 
 def drawconnection(connection: list[tuple[int, int]], bbox: dict[int, tuple[int, int, int, int]],
@@ -352,16 +352,19 @@ def processnpy(masks: np.ndarray, name: str) -> list[np.ndarray]:
     masks = cut_small(connection, masks)
     # CHECK IF MASKS ARE OCCOLUTED
     occlusion_percentages = []
+    kernel = np.ones((5, 5), np.uint8)
+    ceiling_high_map = cv2.erode(ceiling_high_map.astype(np.uint8), kernel, iterations=1)
+    floor_low_map = cv2.erode(floor_low_map.astype(np.uint8), kernel, iterations=1)
+    ceiling_high_map = cv2.dilate(ceiling_high_map.astype(np.uint8), kernel, iterations=1)
+    floor_low_map = cv2.dilate(floor_low_map.astype(np.uint8), kernel, iterations=1)
+    all_percent = occlusion_percentage(np.ones(masks[0].shape, bool), ceiling_high_map, floor_low_map)
     for mask in masks:
         percentage = occlusion_percentage(mask, ceiling_high_map, floor_low_map)
         occlusion_percentages.append(percentage)
     # use kmeans to cluster the occlusion percentage
-    tenth_percentile = np.percentile(occlusion_percentages, 80)
     room_masks = []
     for i in range(len(occlusion_percentages)):
-        if occlusion_percentages[i] > tenth_percentile:
-            pass
-        else:
+        if occlusion_percentages[i] < 0.8:
             room_masks.append(masks[i])
 
     # SAVE THE MASKS
@@ -375,7 +378,8 @@ def processnpy(masks: np.ndarray, name: str) -> list[np.ndarray]:
         room_masks_dilated.append(room_mask_dilated)
     connection, bbox = genConnection(room_masks)
     largest_component = largest_connected_component(connection)
-    room_masks = [room_masks[i] for i in largest_component]
+    if largest_component is not None:
+        room_masks = [room_masks[i] for i in largest_component]
     np.save('output_mask/' + name + '_room_mask.npy', room_masks)
     connection, bbox = genConnection(room_masks)
     drawconnection(connection, bbox, room_masks)

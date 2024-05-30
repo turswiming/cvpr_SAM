@@ -14,8 +14,10 @@ from scipy.stats import trim_mean, trimboth
 
 
 # don`t touch magic number here
-# it test them and find the value fit the best
-
+# we test them and find the value fit the best
+# this program was writend by lzq, who hold a bachelor degree in art&design
+# so the code quality may not be good, but it works
+# feel free to contact me if you have any question: ziq93812@gmail.com
 
 class CustomError(Exception):
     pass
@@ -105,19 +107,19 @@ def process_pc(cloud_path: str, visualize: bool = False, res: float = 0.15, usen
     ceiling_high, ceiling_low = heightlowmap.get_high_low_img(ceiling_pcd, ceiling_bb, res)
     #find the largest group of points
     # Assuming `img` is your image
-
+    pass # find the main group of points, wrap then ,and provide a main point mask
     kernel = np.ones((9, 9), np.uint8)
-    floor_high = cv2.dilate(floor_high, kernel, iterations=2)
+    ceiling_high_process = cv2.dilate(ceiling_high, kernel, iterations=2)
     #floor_low = cv2.erode(floor_low, kernel, iterations=1)
-    plt.imshow(floor_high)
+    plt.imshow(ceiling_high_process)
     plt.show()
     plt.close()
-    if len(floor_high.shape) == 3 and floor_high.shape[2] == 3:
+    if len(ceiling_high_process.shape) == 3 and ceiling_high_process.shape[2] == 3:
         # Image is color
-        img_gray = cv2.cvtColor(floor_high, cv2.COLOR_BGR2GRAY)
+        img_gray = cv2.cvtColor(ceiling_high_process, cv2.COLOR_BGR2GRAY)
     else:
         # Image is already grayscale
-        img_gray = floor_high
+        img_gray = ceiling_high_process
     img_8bit = cv2.convertScaleAbs(img_gray)
     num_labels, labels = cv2.connectedComponents(img_8bit)
     blob_sizes = np.bincount(labels.flatten())
@@ -128,6 +130,7 @@ def process_pc(cloud_path: str, visualize: bool = False, res: float = 0.15, usen
     plt.imshow(largest_blob_mask)
     plt.show()
     plt.close()
+    pass
     # save the images
     print("saving images")
     cv2.imwrite(rel2abs_Path("output_data_2d/{}_floor_high_img.png".format(file_name)), floor_high)

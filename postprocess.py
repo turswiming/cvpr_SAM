@@ -82,11 +82,13 @@ def occlusion_percentage(mask: np.ndarray, ceiling_map: np.ndarray,
             int(index[1] / mask.shape[1] * floor_map.shape[1])
         ] == 0:
             floor_size += 1
-    return (ceiling_size * 0.9 + floor_size * 0.1) / num_samples
+    return ceiling_size / num_samples
 
 
-def drawconnection(connection: list[tuple[int, int]], bbox: dict[int, tuple[int, int, int, int]],
-                   masks):  # min_y,min_x,max_y,max_x
+def drawconnection(connection: list[tuple[int, int]],
+                   bbox: dict[int, tuple[int, int, int, int]],
+                   masks: list[np.ndarray],
+                   text:str):  # min_y,min_x,max_y,max_x
     # Create a color label image
     mask1 = masks[0]
     color_label_img = np.ones((mask1.shape[0], mask1.shape[1], 3), dtype=np.uint8)
@@ -110,8 +112,13 @@ def drawconnection(connection: list[tuple[int, int]], bbox: dict[int, tuple[int,
 
         # connect the center of the two masks
         plt.plot([(minx1 + maxx1) / 2, (minx2 + maxx2) / 2], [(miny1 + maxy1) / 2, (miny2 + maxy2) / 2], color=color)
+    plt.text(1, 3, text)
+
     plt.show(block=True)
 
+    # Display text at the coordinates (1, 3)
+
+    plt.show()
     plt.close()
 
 
@@ -127,6 +134,8 @@ def drawconnection(connection: list[tuple[int, int]], bbox: dict[int, tuple[int,
 #     plt.show(block=True)
 #     plt.close()
 
+def lerp(v0, v1, t):
+    return (1 - t) * v0 + t * v1
 
 def realconnection(mask1: np.ndarray, mask2: np.ndarray):
     # Convert masks to uint8
@@ -358,20 +367,34 @@ def processnpy(masks: np.ndarray, name: str) -> list[np.ndarray]:
     ceiling_high_map = cv2.dilate(ceiling_high_map.astype(np.uint8), kernel, iterations=1)
     floor_low_map = cv2.dilate(floor_low_map.astype(np.uint8), kernel, iterations=1)
     all_percent = occlusion_percentage(np.ones(masks[0].shape, bool), ceiling_high_map, floor_low_map)
+    pass
     for mask in masks:
         percentage = occlusion_percentage(mask, ceiling_high_map, floor_low_map)
         occlusion_percentages.append(percentage)
     # use kmeans to cluster the occlusion percentage
-    room_masks = []
-    for i in range(len(occlusion_percentages)):
-        if occlusion_percentages[i] < 0.9:
-            room_masks.append(masks[i])
 
+    room_masks = []
+    print(occlusion_percentages)
+    arr = np.array(occlusion_percentages)
+    size = len(arr)
+    # Find the indices of the largest 10 elements
+    max_indices = np.argpartition(arr, -int(size*0.3))[-int(size*0.3):]
+    min_indices = np.argpartition(arr, 2)[:2]
+    max_percentage = sum(arr[max_indices]) / len(max_indices)
+    min_percentage = sum(arr[min_indices]) / len(min_indices)
+    print("max"+str(max_percentage))
+    print("min"+str(min_percentage))
+    threshold = lerp(0, max_percentage, 0.90)+0.09
+    print("threshold"+str(threshold))
+    for i in range(len(occlusion_percentages)):
+        if occlusion_percentages[i] < threshold:
+            room_masks.append(masks[i])
+    pass
     # SAVE THE MASKS
     print(len(room_masks))
     room_masks_dilated = []
     for room_mask in room_masks:
-        kernel = np.ones((5, 5), np.uint8)
+        kernel = np.ones((7, 7), np.uint8)
         room_mask_dilated = cv2.erode(room_mask.astype(np.uint8), kernel, iterations=1)
 
         room_mask_dilated = cv2.dilate(room_mask_dilated.astype(np.uint8), kernel, iterations=1)
@@ -382,7 +405,7 @@ def processnpy(masks: np.ndarray, name: str) -> list[np.ndarray]:
         room_masks = [room_masks[i] for i in largest_component]
     np.save('output_mask/' + name + '_room_mask.npy', room_masks)
     connection, bbox = genConnection(room_masks)
-    drawconnection(connection, bbox, room_masks)
+    drawconnection(connection, bbox, room_masks,name)
 
     print("finish")
     return room_masks

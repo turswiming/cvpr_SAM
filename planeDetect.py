@@ -10,7 +10,6 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 from scipy.ndimage import convolve
-from scipy.ndimage.filters import uniform_filter1d
 from scipy.stats import trim_mean, trimboth
 
 

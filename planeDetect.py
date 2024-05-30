@@ -83,6 +83,8 @@ def process_pc(cloud_path: str, visualize: bool = False, res: float = 0.15, usen
     print("process_pc:--------------------------------------------------")
     print(cloud_path)
     point_cloud: o3d.geometry.PointCloud = o3d.io.read_point_cloud(cloud_path)
+    if not point_cloud.has_points():
+        raise CustomError("No points in the point cloud")
     # GET FILE NAME without extension
     file_name = getName(cloud_path)
     if (not point_cloud.has_normals()):
@@ -102,6 +104,31 @@ def process_pc(cloud_path: str, visualize: bool = False, res: float = 0.15, usen
 
     floor_high, floor_low = heightlowmap.get_high_low_img(floor_pcd, floor_bb, res)
     ceiling_high, ceiling_low = heightlowmap.get_high_low_img(ceiling_pcd, ceiling_bb, res)
+    #find the largest group of points
+    # Assuming `img` is your image
+
+    kernel = np.ones((9, 9), np.uint8)
+    floor_high = cv2.dilate(floor_high, kernel, iterations=2)
+    #floor_low = cv2.erode(floor_low, kernel, iterations=1)
+    plt.imshow(floor_high)
+    plt.show()
+    plt.close()
+    if len(floor_high.shape) == 3 and floor_high.shape[2] == 3:
+        # Image is color
+        img_gray = cv2.cvtColor(floor_high, cv2.COLOR_BGR2GRAY)
+    else:
+        # Image is already grayscale
+        img_gray = floor_high
+    img_8bit = cv2.convertScaleAbs(img_gray)
+    num_labels, labels = cv2.connectedComponents(img_8bit)
+    blob_sizes = np.bincount(labels.flatten())
+    # The first blob is the background, so ignore it
+    blob_sizes[0] = 0
+    largest_blob = blob_sizes.argmax()
+    largest_blob_mask = np.uint8(labels == largest_blob)
+    plt.imshow(largest_blob_mask)
+    plt.show()
+    plt.close()
     # save the images
     print("saving images")
     cv2.imwrite(rel2abs_Path("output_data_2d/{}_floor_high_img.png".format(file_name)), floor_high)
@@ -252,7 +279,7 @@ def get_floor_ceiling(name: str, point_cloud: o3d.geometry.PointCloud, visualize
     kernel = np.ones((15, 15, 3))
     conv_result = convolve(count_map, kernel, mode='constant', cval=0.0)
     conv_result_max = np.max(conv_result)
-    value = np.percentile(conv_result[(conv_result >= 25) & (conv_result <= conv_result_max - 25)], 70)
+    value = np.percentile(conv_result[(conv_result >= 25) & (conv_result <= conv_result_max - 25)], 50)
     indices = np.argwhere(conv_result >= value)  # pow(res*10,2)*(40/16))#magic number, fit algrathm well
     min_indices = indices.min(axis=0)
     max_indices = indices.max(axis=0) + 1
@@ -421,15 +448,15 @@ if __name__ == "__main__":
                 print(e)
 
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("Path", help="Path to the directory containing .ply files")
-    parser.add_argument("file", help="File to process")
-    args = parser.parse_args()
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument("Path", help="Path to the directory containing .ply files")
+    # parser.add_argument("file", help="File to process")
+    # args = parser.parse_args()
+    #
+    # Path = args.Path
+    # file = args.file
 
-    Path = args.Path
-    file = args.file
-
-    process_file(file)
+    process_file("14_Garage_01_F1_s0p01m.ply")#s0p01m
     # if __name__ == "__main__":
     #     with Pool(os.cpu_count()) as p:
     #         p.map(process_file, os.listdir(Path))

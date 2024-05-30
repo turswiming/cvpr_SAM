@@ -110,24 +110,6 @@ def process_pc(cloud_path: str, visualize: bool = False, res: float = 0.15, usen
     cv2.imwrite(rel2abs_Path("output_data_2d/{}_ceiling_low_img.png".format(file_name)), ceiling_low)
     print("done")
     print("")
-    # cv use 0~1 while plt con`t care
-    # cv2.imwrite(rel2abs_Path("output_data/{}_ceiling_low_bi_img.png".format(file_name)), ceiling_low_bi)
-    #
-    # tempcopy = np.copy(ceiling_low_bi)
-    # subimages = []
-    # # get all zero subimages and save them
-    # for y in range(tempcopy.shape[0]):
-    #     for x in range(tempcopy.shape[1]):
-    #         if tempcopy[y, x] == 0:
-    #             subimages.append(extract_1subimage(tempcopy, x, y))
-    #
-    # print(f"extracting {len(subimages)}th subimage")
-    # for i, subimage in enumerate(subimages):
-    #     if to_fill(subimage, res):
-    #         print(f"filling {i}th subimage")
-    #         subimage.fill_img(ceiling_low_bi)
-    #         subimage.filled = True
-    # cv2.imwrite(rel2abs_Path("output_data/{}_ceiling_low_bi_fill_img.png".format(file_name)), ceiling_low_bi)
 
 
 def extract_1subimage(img: np.ndarray, x: int, y: int) -> Subimage:

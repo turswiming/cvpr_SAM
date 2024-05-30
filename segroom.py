@@ -134,18 +134,7 @@ path = "output_data_2d"
 
 if __name__ == '__main__':
     seg = Seg("vit_h", 'model_weight/sam_vit_h_4b8939.pth')
-    mask_generator = SamAutomaticMaskGenerator(
-        model=seg.sam,
-        points_per_side=32,  # another magic number, but it works perfectly
-        points_per_batch=15,  # fit 16g vram perfectly
-        pred_iou_thresh=0.80,
-        stability_score_thresh=0.6,  # origin 0.7
-        stability_score_offset=-1,
-        box_nms_thresh=0.5,  # origin 0.7
-
-        crop_n_layers=0,
-        min_mask_region_area=100,  # Requires open-cv to run post-processing
-    )
+    
     path = 'output_data_2d/'
     save_path_prefix = "output_data_2d_"
     maxnumber = 0
@@ -162,6 +151,20 @@ if __name__ == '__main__':
 
     for file in os.listdir(path):
         if file.endswith('_ceiling_high_img.png') or file.endswith('_floor_low_img.png'):
+            img = Image.open(path+file)
+            maxsize =  max(np.asarray(img).shape)
+            mask_generator = SamAutomaticMaskGenerator(
+                    model=seg.sam,
+                    points_per_side=maxsize/64,  # another magic number, but it works perfectly
+                    points_per_batch=15,  # fit 16g vram perfectly
+                    pred_iou_thresh=0.80,
+                    stability_score_thresh=0.6,  # origin 0.7
+                    stability_score_offset=-1,
+                    box_nms_thresh=0.5,  # origin 0.7
+
+                    crop_n_layers=0,
+                    min_mask_region_area=100,  # Requires open-cv to run post-processing
+                )
             res = seg.segment(path + file, save_path + file, mask_generator)
             np.save(save_path + file + '_new{}segmented.npy'.format(len(res)), res)
             print('Segmentation saved to', save_path + file + '_new{}segmented.npy'.format(len(res)))

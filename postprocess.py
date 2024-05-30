@@ -364,7 +364,7 @@ def processnpy(masks: np.ndarray, name: str) -> list[np.ndarray]:
     # use kmeans to cluster the occlusion percentage
     room_masks = []
     for i in range(len(occlusion_percentages)):
-        if occlusion_percentages[i] < 0.8:
+        if occlusion_percentages[i] < 0.9:
             room_masks.append(masks[i])
 
     # SAVE THE MASKS
@@ -389,7 +389,7 @@ def processnpy(masks: np.ndarray, name: str) -> list[np.ndarray]:
 
 
 if __name__ == '__main__':
-    path = 'output_data_2d/'
+    path = 'output_data_2d_7/'
     for file in os.listdir(path):
         if file.endswith('.npy'):
             if "_ceiling_" in file:

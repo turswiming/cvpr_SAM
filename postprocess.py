@@ -4,18 +4,9 @@ import matplotlib.pyplot as plt
 import cv2
 from skimage.measure import block_reduce
 from collections import defaultdict
+import shutil
+import json
 
-
-def downscale_max(image, block_size):
-    # 如果image是一个二维数组
-    if image.ndim == 2:
-        small = block_reduce(image, block_size=(block_size, block_size), func=np.max)
-    # 如果image是一个三维数组
-    elif image.ndim == 3:
-        small = block_reduce(image, block_size=(block_size, block_size, 1), func=np.max)
-    else:
-        raise ValueError("Unsupported image dimensions: %d" % image.ndim)
-    return small
 
 
 def split_masks(mask):
@@ -63,13 +54,13 @@ def bboxcollide(bbox1: tuple[int, int, int, int], bbox2: tuple[int, int, int, in
     return not (min_y1 > max_y2 or min_y2 > max_y1 or min_x1 > max_x2 or min_x2 > max_x1)
 
 
-def occlusion_percentage(mask: np.ndarray, ceiling_map: np.ndarray,
-                         floor_map: np.ndarray) -> float:  # min_y,min_x,max_y,max_x
+def occlusion_percentage(mask: np.ndarray, 
+                         ceiling_map: np.ndarray,
+                         ) -> float:  # min_y,min_x,max_y,max_x
     num_samples = 300
     true_indices = np.argwhere(mask)
     sampled_indices = np.random.choice(true_indices.shape[0], min(num_samples, true_indices.shape[0]), replace=False)
     ceiling_size = 0
-    floor_size = 0
     for i in sampled_indices:
         index = true_indices[i]
         if ceiling_map[
@@ -77,11 +68,6 @@ def occlusion_percentage(mask: np.ndarray, ceiling_map: np.ndarray,
             int(index[1] / mask.shape[1] * ceiling_map.shape[1])
         ] == 0:
             ceiling_size += 1
-        if floor_map[
-            int(index[0] / mask.shape[0] * floor_map.shape[0]),
-            int(index[1] / mask.shape[1] * floor_map.shape[1])
-        ] == 0:
-            floor_size += 1
     return ceiling_size / num_samples
 
 
@@ -254,6 +240,47 @@ def cut_small(connection: list[tuple[int, int]], masks: list[np.ndarray]) \
 
     return new_masks
 
+def cut_single(connection: list[tuple[int, int]], masks: list[np.ndarray]) \
+        -> list[np.ndarray]:
+    remove_mask_indices = []
+    single_connection_mask = []
+    for i in range(len(masks)):
+        connects = []
+        for c in connection:
+            if c[0] == i:
+                connects.append(c[1])
+            if c[1] == i:
+                connects.append(c[0])
+        if len(connects) == 1:
+            single_connection_mask.append(i)
+    for a in range(len(single_connection_mask)):
+        i=single_connection_mask[a]
+        remove_mask_indices.append(i)
+        connects = []
+        for c in connection:
+            if c[0] == i:
+                connects.append(c[1])
+            if c[1] == i:
+                connects.append(c[0])
+        if len(connects) == 1:
+            masks[connects[0]] = masks[connects[0]] + masks[i]
+        else:
+            max_id = -1
+            maxvalue = -1
+            for maskID in connects:
+                val = connectionsize(masks[maskID], masks[i])
+                if val > maxvalue:
+                    maxvalue = val
+                    max_id = maskID
+            if max_id != -1:
+                masks[max_id] = masks[max_id] + masks[i]
+
+    new_masks = []
+    for i in range(len(masks)):
+        if i not in remove_mask_indices:
+            new_masks.append(masks[i])
+
+    return new_masks
 
 def genConnection(masks: list[np.ndarray]) -> tuple[list[tuple[int, int]], dict[int, tuple[int, int, int, int]]]:
     potential_connection = []
@@ -321,6 +348,11 @@ def largest_connected_component(connection):
 def processnpy(masks: np.ndarray, name: str) -> list[np.ndarray]:
     # print(masks[0].keys())
     # dict_keys(['segmentation', 'area', 'bbox', 'predicted_iou', 'point_coords', 'stability_score', 'crop_box'])
+    for file in os.listdir('output_data_2d/'):
+        if file.endswith('ceiling_mask.png'):
+            if name in file:
+                ceiling_high_map_mask = cv2.imread('output_data_2d/' + file, cv2.IMREAD_UNCHANGED)
+                break
     new_masks = []
     masks = sorted(masks, key=compare_mask_data)
     firstMask = masks[0]["segmentation"]
@@ -335,35 +367,34 @@ def processnpy(masks: np.ndarray, name: str) -> list[np.ndarray]:
 
     for mask in mask_cuted:
         new_masks.extend(split_masks(mask))
+    #
+    # kernel = np.ones((65, 65), np.uint8)
+    # ceiling_high_map_mask = cv2.dilate(ceiling_high_map_mask.astype(np.uint8), kernel, iterations=1)
+    # ceiling_high_map_mask = cv2.erode(ceiling_high_map_mask.astype(np.uint8), kernel, iterations=1)
+    # ceiling_high_map_bool = ceiling_high_map_mask > 0
+    # plt.imshow(ceiling_high_map_bool)
+    # plt.show()
+    # plt.close()
+    # pass
+    # new_new_masks = []
+    # for i in range(len(new_masks)):
+    #     mask = new_masks[i] & ceiling_high_map_bool
+    #     size = np.sum(mask)
+    #     if size > 10:
+    #         new_new_masks.append(mask)
+    # new_masks = new_new_masks
+    # pass
     occolution_filtered_masks = []
     for mask in new_masks:
         occolution_filtered_masks.append(mask)
     connection, bbox = genConnection(occolution_filtered_masks)
-    occolution_mask = np.zeros((firstMask.shape[0], firstMask.shape[1]), dtype=bool)
-    room_mask = np.zeros((firstMask.shape[0], firstMask.shape[1]), dtype=bool)
 
-    print(len(masks))
-    masks = cut_small(connection, occolution_filtered_masks)
-    connection, bbox = genConnection(masks)
-
-    print(len(masks))
-    for file in os.listdir('output_data_2d/'):
-        if "_ceiling_high_" in file and file.endswith('_img.png'):
-            if name in file:
-                ceiling_high_map = cv2.imread('output_data_2d/' + file, cv2.IMREAD_UNCHANGED)
-                break
-    for file in os.listdir('output_data_2d/'):
-        if "_floor_low_" in file and file.endswith('_img.png'):
-            if name in file:
-                floor_low_map = cv2.imread('output_data_2d/' + file, cv2.IMREAD_UNCHANGED)
-                break
-
-    masks = cut_small(connection, masks)
+    masks = cut_small(connection, new_masks)
     # CHECK IF MASKS ARE OCCOLUTED
     occlusion_percentages = []
     kernel = np.ones((5, 5), np.uint8)
-    ceiling_high_map = cv2.erode(ceiling_high_map.astype(np.uint8), kernel, iterations=1)
-    floor_low_map = cv2.erode(floor_low_map.astype(np.uint8), kernel, iterations=1)
+    ceiling_high_map = cv2.erode(ceiling_high_map_mask.astype(np.uint8), kernel, iterations=1)
+    floor_low_map = cv2.erode(ceiling_high_map_mask.astype(np.uint8), kernel, iterations=1)
     ceiling_high_map = cv2.dilate(ceiling_high_map.astype(np.uint8), kernel, iterations=1)
     floor_low_map = cv2.dilate(floor_low_map.astype(np.uint8), kernel, iterations=1)
     all_percent = occlusion_percentage(np.ones(masks[0].shape, bool), ceiling_high_map, floor_low_map)
@@ -384,17 +415,18 @@ def processnpy(masks: np.ndarray, name: str) -> list[np.ndarray]:
     min_percentage = sum(arr[min_indices]) / len(min_indices)
     print("max"+str(max_percentage))
     print("min"+str(min_percentage))
-    threshold = lerp(0, max_percentage, 0.90)+0.09
+    threshold = lerp(min_percentage, 1, 0.90)
     print("threshold"+str(threshold))
     for i in range(len(occlusion_percentages)):
         if occlusion_percentages[i] < threshold:
             room_masks.append(masks[i])
     pass
     # SAVE THE MASKS
+    #room_masks = masks
     print(len(room_masks))
     room_masks_dilated = []
     for room_mask in room_masks:
-        kernel = np.ones((7, 7), np.uint8)
+        kernel = np.ones((13, 13), np.uint8)
         room_mask_dilated = cv2.erode(room_mask.astype(np.uint8), kernel, iterations=1)
 
         room_mask_dilated = cv2.dilate(room_mask_dilated.astype(np.uint8), kernel, iterations=1)
@@ -405,14 +437,38 @@ def processnpy(masks: np.ndarray, name: str) -> list[np.ndarray]:
         room_masks = [room_masks[i] for i in largest_component]
     np.save('output_mask/' + name + '_room_mask.npy', room_masks)
     connection, bbox = genConnection(room_masks)
-    drawconnection(connection, bbox, room_masks,name)
-
+    if len(connection) > 0:
+        drawconnection(connection, bbox, room_masks,name)
+    room_sizes = [np.sum(mask) for mask in room_masks]
+    #get room sizes greater than 1000
+    large_room = [room_masks[i] for i in range(len(room_masks)) if room_sizes[i] > 100*(1/0.05)*(1/0.05)]
+    small_room = [room_masks[i] for i in range(len(room_masks)) if room_sizes[i] <= 10*(1/0.05)*(1/0.05)]
     print("finish")
-    return room_masks
+    room_data = {
+        "room_number": len(room_masks),
+        "large_room":len(large_room),
+        "small_room":len(small_room),
+    }
+    with open("output_mask/{}_room_data.json".format(room_data), 'w') as f:
+        json.dump(room_data, f)
+    return room_masks, room_data
 
 
 if __name__ == '__main__':
-    path = 'output_data_2d_7/'
+    path = 'output_data_2d_12/'
+    save_path_prefix = "output_mask_2d_"
+    maxnumber = 0
+    for file in os.listdir("./"):
+        if file.startswith(save_path_prefix):
+            number = int(file.removeprefix(save_path_prefix))
+            if number > maxnumber:
+                maxnumber = number
+
+    os.mkdir(save_path_prefix + str(maxnumber + 1))
+    save_path = save_path_prefix + str(maxnumber + 1) + "/"
+    # copy this python file to save path
+
+
     for file in os.listdir(path):
         if file.endswith('.npy'):
             if "_ceiling_" in file:
@@ -420,4 +476,7 @@ if __name__ == '__main__':
                 print("Processing", file)
                 name = getName(file)
 
-                processnpy(npy, name)
+                _,room_data = processnpy(npy, name)
+
+    shutil.copy("./segroom.py", save_path)
+    shutil.copy("./postprocess.py", save_path)

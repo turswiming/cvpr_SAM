@@ -16,7 +16,8 @@ import shutil
 
 def getName(path: str) -> str:
     name = os.path.basename(path)
-    names = name.split('_')[0:4]
+    name = os.path.splitext(name)
+    names = name[0].split('_')[0:4]
     return '_'.join(names)
 
 
@@ -68,25 +69,6 @@ class Seg:
         img_rescaled = ((img - min_val) / (max_val - min_val) * 255).astype(np.uint8)
         img = Image.fromarray(img_rescaled)
 
-        if "_2d" not in read_path:
-            img = np.array(img)
-            img_inv = cv2.bitwise_not(img)
-            edges = cv2.Canny(img_inv, 245, 200, apertureSize=3)
-
-            img_inv = cv2.bitwise_not(img)
-            lines = cv2.HoughLinesP(edges, 1, np.pi / 180, 105, minLineLength=35, maxLineGap=10)
-            for line in lines:
-                x1, y1, x2, y2 = line[0]
-                if x2 - x1 != 0:
-                    slope = (y2 - y1) / (x2 - x1)
-                else:
-                    slope = float('inf')
-                if abs(x2 - x1) + abs(y2 - y1) > img.shape[0] * 0.1:
-                    continue
-                if abs(slope) > 0.02 and abs(slope) < 50:
-                    continue
-                cv2.line(img, (x1, y1), (x2, y2), (0, 0, 0), 4)
-
         img = np.array(img)  # Convert PIL Image back to numpy array
 
         img_rgb = cv2.applyColorMap(img, cv2.COLORMAP_HSV)
@@ -102,11 +84,12 @@ class Seg:
         plt.savefig(save_path + '_segmented.png')
         plt.close()
         print('Segmentation saved to', save_path + '_segmented.png')
-        plt.figure(figsize=(20,20))
-        plt.imshow(img*0.01)
+        plt.figure(figsize=(20, 20))
+        plt.imshow(img * 0.01)
         show_anns(masks)
         plt.axis('off')
         plt.savefig(save_path + '_segmented_pure.png')
+        plt.close()
 
         return masks
 
@@ -134,7 +117,7 @@ path = "output_data_2d"
 
 if __name__ == '__main__':
     seg = Seg("vit_h", 'model_weight/sam_vit_h_4b8939.pth')
-    
+
     path = 'output_data_2d/'
     save_path_prefix = "output_data_2d_"
     maxnumber = 0
@@ -143,29 +126,33 @@ if __name__ == '__main__':
             number = int(file.removeprefix(save_path_prefix))
             if number > maxnumber:
                 maxnumber = number
-    
-    os.mkdir(save_path_prefix+str(maxnumber+1))
-    save_path = save_path_prefix+str(maxnumber+1)+"/"
-    #copy this python file to save path
+
+    os.mkdir(save_path_prefix + str(maxnumber + 1))
+    save_path = save_path_prefix + str(maxnumber + 1) + "/"
+    # copy this python file to save path
     shutil.copy("./segroom.py", save_path)
+    shutil.copytree(path, save_path+"/output_data_2d")
 
     for file in os.listdir(path):
         if file.endswith('_ceiling_high_img.png') or file.endswith('_floor_low_img.png'):
-            img = Image.open(path+file)
-            maxsize =  max(np.asarray(img).shape)
+            img = Image.open(path + file)
+            maxsize = max(np.asarray(img).shape)
             mask_generator = SamAutomaticMaskGenerator(
-                    model=seg.sam,
-                    points_per_side=maxsize/64,  # another magic number, but it works perfectly
-                    points_per_batch=15,  # fit 16g vram perfectly
-                    pred_iou_thresh=0.80,
-                    stability_score_thresh=0.6,  # origin 0.7
-                    stability_score_offset=-1,
-                    box_nms_thresh=0.5,  # origin 0.7
+                model=seg.sam,
+                points_per_side=int(maxsize / 64),  # another magic number, but it works perfectly
+                points_per_batch=15,  # fit 16g vram perfectly
+                pred_iou_thresh=0.80,
+                stability_score_thresh=0.6,  # origin 0.7
+                stability_score_offset=-1,
+                box_nms_thresh=0.4,  # origin 0.7
 
-                    crop_n_layers=0,
-                    min_mask_region_area=100,  # Requires open-cv to run post-processing
-                )
+                crop_n_layers=0,
+                min_mask_region_area=100,  # Requires open-cv to run post-processing
+            )
             res = seg.segment(path + file, save_path + file, mask_generator)
             np.save(save_path + file + '_new{}segmented.npy'.format(len(res)), res)
             print('Segmentation saved to', save_path + file + '_new{}segmented.npy'.format(len(res)))
+
+    shutil.copy("./segroom.py", save_path)
+    shutil.copytree(path, save_path + "/output_data_2d")
 # 现对单个通道进行分解，统计分解数量，越少的权重越高

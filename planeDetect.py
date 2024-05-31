@@ -15,7 +15,7 @@ from scipy.stats import trim_mean, trimboth
 
 # don`t touch magic number here
 # we test them and find the value fit the best
-# this program was writend by lzq, who hold a bachelor degree in art&design
+# this program was writened by lzq, who hold a bachelor degree in art&design
 # so the code quality may not be good, but it works
 # feel free to contact me if you have any question: ziq93812@gmail.com
 
@@ -84,6 +84,7 @@ def process_pc(cloud_path: str, visualize: bool = False, res: float = 0.15, usen
     print("process_pc:--------------------------------------------------")
     print(cloud_path)
     point_cloud: o3d.geometry.PointCloud = o3d.io.read_point_cloud(cloud_path)
+    point_number = len(point_cloud.points)
     if not point_cloud.has_points():
         raise CustomError("No points in the point cloud")
     # GET FILE NAME without extension
@@ -93,14 +94,7 @@ def process_pc(cloud_path: str, visualize: bool = False, res: float = 0.15, usen
 
     floor_bb, ceiling_bb = get_floor_ceiling(cloud_path, point_cloud, visualize, usenewDetect)
     # print these to json file
-    bb_data = {
-        "floor": {"min": [floor_bb.get_min_bound()[0], floor_bb.get_min_bound()[1], floor_bb.get_min_bound()[2]]
-            , "max": [floor_bb.get_max_bound()[0], floor_bb.get_max_bound()[1], floor_bb.get_max_bound()[2]]},
-        "ceiling": {"min": [ceiling_bb.get_min_bound()[0], ceiling_bb.get_min_bound()[1], ceiling_bb.get_min_bound()[2]]
-            , "max": [ceiling_bb.get_max_bound()[0], ceiling_bb.get_max_bound()[1], ceiling_bb.get_max_bound()[2]]}
-    }
-    with open("output_data_2d/{}_bbox.json".format(file_name), 'w') as f:
-        json.dump(bb_data, f)
+
     floor_pcd, ceiling_pcd = extract_planes_point(point_cloud, floor_bb, ceiling_bb, visualize)
 
     floor_high, floor_low = heightlowmap.get_high_low_img(floor_pcd, floor_bb, res)
@@ -108,12 +102,10 @@ def process_pc(cloud_path: str, visualize: bool = False, res: float = 0.15, usen
     #find the largest group of points
     # Assuming `img` is your image
     pass # find the main group of points, wrap then ,and provide a main point mask
-    kernel = np.ones((9, 9), np.uint8)
-    ceiling_high_process = cv2.dilate(ceiling_high, kernel, iterations=2)
-    #floor_low = cv2.erode(floor_low, kernel, iterations=1)
-    plt.imshow(ceiling_high_process)
-    plt.show()
-    plt.close()
+    kernel = np.ones((7, 7), np.uint8)
+    ceiling_high_process = ceiling_high/np.max(ceiling_high)*255
+    ceiling_high_process = cv2.dilate(ceiling_high_process, kernel, iterations=1)
+    ceiling_high_process = cv2.erode(ceiling_high_process, kernel, iterations=1)
     if len(ceiling_high_process.shape) == 3 and ceiling_high_process.shape[2] == 3:
         # Image is color
         img_gray = cv2.cvtColor(ceiling_high_process, cv2.COLOR_BGR2GRAY)
@@ -126,13 +118,32 @@ def process_pc(cloud_path: str, visualize: bool = False, res: float = 0.15, usen
     # The first blob is the background, so ignore it
     blob_sizes[0] = 0
     largest_blob = blob_sizes.argmax()
-    largest_blob_mask = np.uint8(labels == largest_blob)
-    plt.imshow(largest_blob_mask)
-    plt.show()
-    plt.close()
+    largest_blob_mask = np.uint8(labels == largest_blob) * 255
     pass
+    point_cloud: o3d.geometry.PointCloud = o3d.io.read_point_cloud(cloud_path)
+    point_number = len(point_cloud.points)
+    crop_bbox = o3d.geometry.AxisAlignedBoundingBox(
+        min_bound=(floor_bb.get_min_bound()[0], floor_bb.get_min_bound()[1], floor_bb.get_min_bound()[2]+1),
+        max_bound=(ceiling_bb.get_max_bound()[0], ceiling_bb.get_max_bound()[1], ceiling_bb.get_min_bound()[2]+1)
+    )
+    point_cloud_denoise = point_cloud.crop(crop_bbox)
+    bb_data = {
+        "floor": {"min": [floor_bb.get_min_bound()[0], floor_bb.get_min_bound()[1], floor_bb.get_min_bound()[2]]
+            , "max": [floor_bb.get_max_bound()[0], floor_bb.get_max_bound()[1], floor_bb.get_max_bound()[2]]},
+        "ceiling": {"min": [ceiling_bb.get_min_bound()[0], ceiling_bb.get_min_bound()[1], ceiling_bb.get_min_bound()[2]]
+            , "max": [ceiling_bb.get_max_bound()[0], ceiling_bb.get_max_bound()[1], ceiling_bb.get_max_bound()[2]]},
+        "x_size":floor_bb.get_max_bound()[0] - floor_bb.get_min_bound()[0],
+        "y_size":floor_bb.get_max_bound()[1] - floor_bb.get_min_bound()[1],
+        "z_size":ceiling_bb.get_min_bound()[2] - floor_bb.get_min_bound()[2],
+        "point_number": point_number,
+        "noise_rate": point_number-len(point_cloud_denoise.points) / point_number,
+
+    }
+    with open("output_data_2d/{}_bbox.json".format(file_name), 'w') as f:
+        json.dump(bb_data, f)
     # save the images
     print("saving images")
+    cv2.imwrite(rel2abs_Path("output_data_2d/{}_ceiling_mask.png".format(file_name)), largest_blob_mask)
     cv2.imwrite(rel2abs_Path("output_data_2d/{}_floor_high_img.png".format(file_name)), floor_high)
     cv2.imwrite(rel2abs_Path("output_data_2d/{}_floor_low_img.png".format(file_name)), floor_low)
     cv2.imwrite(rel2abs_Path("output_data_2d/{}_ceiling_high_img.png".format(file_name)), ceiling_high)
@@ -281,7 +292,7 @@ def get_floor_ceiling(name: str, point_cloud: o3d.geometry.PointCloud, visualize
     kernel = np.ones((15, 15, 3))
     conv_result = convolve(count_map, kernel, mode='constant', cval=0.0)
     conv_result_max = np.max(conv_result)
-    value = np.percentile(conv_result[(conv_result >= 25) & (conv_result <= conv_result_max - 25)], 50)
+    value = np.percentile(conv_result[(conv_result >= 25) & (conv_result <= conv_result_max - 25)], 70)
     indices = np.argwhere(conv_result >= value)  # pow(res*10,2)*(40/16))#magic number, fit algrathm well
     min_indices = indices.min(axis=0)
     max_indices = indices.max(axis=0) + 1
@@ -404,11 +415,11 @@ def get_floor_ceiling(name: str, point_cloud: o3d.geometry.PointCloud, visualize
         floor, ceiling = newDetect(point_cloud, visualize, name)
 
     extend_floor = o3d.geometry.AxisAlignedBoundingBox(
-        min_bound=(xmin, ymin, winsorized_mean_floor - 0.7),
+        min_bound=(xmin, ymin, winsorized_mean_floor - 1),
         max_bound=(xmax, ymax, winsorized_mean_floor + 0.3))
 
     extend_ceiling = o3d.geometry.AxisAlignedBoundingBox(
-        min_bound=(xmin, ymin, winsorized_mean_ceiling - 0.5),
+        min_bound=(xmin, ymin, winsorized_mean_ceiling - 1),
         max_bound=(xmax, ymax, winsorized_mean_ceiling + 3))
 
     print(extend_floor.get_min_bound(), extend_floor.get_max_bound())
@@ -444,21 +455,22 @@ if __name__ == "__main__":
 
     def process_file(file):
         if file.endswith(".ply"):
-            try:
-                process_pc(f"{Path}/{file}", False, 0.05, False)
-            except CustomError as e:
-                print(e)
+            if "s0p01m" in file:
+                try:
+                    process_pc(f"{Path}/{file}", False, 0.05, False)
+                except CustomError as e:
+                    print(e)
 
 
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument("Path", help="Path to the directory containing .ply files")
-    # parser.add_argument("file", help="File to process")
-    # args = parser.parse_args()
-    #
-    # Path = args.Path
-    # file = args.file
+    parser = argparse.ArgumentParser()
+    parser.add_argument("Path", help="Path to the directory containing .ply files")
+    parser.add_argument("file", help="File to process")
+    args = parser.parse_args()
+    
+    Path = args.Path
+    file = args.file
 
-    process_file("14_Garage_01_F1_s0p01m.ply")#s0p01m
+    process_file(file)#s0p01m
     # if __name__ == "__main__":
     #     with Pool(os.cpu_count()) as p:
     #         p.map(process_file, os.listdir(Path))

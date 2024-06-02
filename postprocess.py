@@ -203,7 +203,7 @@ def isRemovable(mask: np.ndarray) -> bool:
     if len(indices[0]) < 500:
         return True
     else:
-        if (indices[0].max() - indices[0].min()) < 20 or (indices[1].max() - indices[1].min()) < 20:
+        if (indices[0].max() - indices[0].min()) < 32 or (indices[1].max() - indices[1].min()) < 32:
             return True
     return False
 
@@ -348,10 +348,10 @@ def largest_connected_component(connection):
 def processnpy(masks: np.ndarray, name: str) -> list[np.ndarray]:
     # print(masks[0].keys())
     # dict_keys(['segmentation', 'area', 'bbox', 'predicted_iou', 'point_coords', 'stability_score', 'crop_box'])
-    for file in os.listdir('output_data_2d/'):
+    for file in os.listdir('output/output_data_2d/'):
         if file.endswith('ceiling_mask.png'):
             if name in file:
-                ceiling_high_map_mask = cv2.imread('output_data_2d/' + file, cv2.IMREAD_UNCHANGED)
+                ceiling_high_map_mask = cv2.imread('output/output_data_2d/' + file, cv2.IMREAD_UNCHANGED)
                 break
     new_masks = []
     masks = sorted(masks, key=compare_mask_data)
@@ -392,35 +392,37 @@ def processnpy(masks: np.ndarray, name: str) -> list[np.ndarray]:
     masks = cut_small(connection, new_masks)
     # CHECK IF MASKS ARE OCCOLUTED
     occlusion_percentages = []
-    kernel = np.ones((5, 5), np.uint8)
-    ceiling_high_map = cv2.erode(ceiling_high_map_mask.astype(np.uint8), kernel, iterations=1)
-    floor_low_map = cv2.erode(ceiling_high_map_mask.astype(np.uint8), kernel, iterations=1)
-    ceiling_high_map = cv2.dilate(ceiling_high_map.astype(np.uint8), kernel, iterations=1)
-    floor_low_map = cv2.dilate(floor_low_map.astype(np.uint8), kernel, iterations=1)
-    all_percent = occlusion_percentage(np.ones(masks[0].shape, bool), ceiling_high_map, floor_low_map)
-    pass
-    for mask in masks:
-        percentage = occlusion_percentage(mask, ceiling_high_map, floor_low_map)
-        occlusion_percentages.append(percentage)
-    # use kmeans to cluster the occlusion percentage
+    kernel = np.ones((35, 35), np.uint8)
+    ceiling_high_map = cv2.dilate(ceiling_high_map_mask.astype(np.uint8), kernel, iterations=1)
 
+    all_percent = occlusion_percentage(np.ones(masks[0].shape, bool), ceiling_high_map)
     room_masks = []
-    print(occlusion_percentages)
-    arr = np.array(occlusion_percentages)
-    size = len(arr)
-    # Find the indices of the largest 10 elements
-    max_indices = np.argpartition(arr, -int(size*0.3))[-int(size*0.3):]
-    min_indices = np.argpartition(arr, 2)[:2]
-    max_percentage = sum(arr[max_indices]) / len(max_indices)
-    min_percentage = sum(arr[min_indices]) / len(min_indices)
-    print("max"+str(max_percentage))
-    print("min"+str(min_percentage))
-    threshold = lerp(min_percentage, 1, 0.90)
-    print("threshold"+str(threshold))
-    for i in range(len(occlusion_percentages)):
-        if occlusion_percentages[i] < threshold:
-            room_masks.append(masks[i])
-    pass
+    if all_percent >= 0.8:
+        for i in range(len(masks)):
+            if masks[i][0,0] ==0 and masks[i][0,-1] == 0 and masks[i][-1,0] == 0 and masks[i][-1,-1] == 0:
+                room_masks.append(masks[i])
+        pass
+    else:
+        for mask in masks:
+            percentage = occlusion_percentage(mask, ceiling_high_map)
+            occlusion_percentages.append(percentage)
+        # use kmeans to cluster the occlusion percentage
+        print(occlusion_percentages)
+        arr = np.array(occlusion_percentages)
+        size = len(arr)
+        # Find the indices of the largest 10 elements
+        max_indices = np.argpartition(arr, -int(size*0.3))[-int(size*0.3):]
+        min_indices = np.argpartition(arr, 2)[:2]
+        max_percentage = sum(arr[max_indices]) / len(max_indices)
+        min_percentage = sum(arr[min_indices]) / len(min_indices)
+        print("max"+str(max_percentage))
+        print("min"+str(min_percentage))
+        threshold = lerp(all_percent, 1, 0.1)
+        print("threshold"+str(threshold))
+        for i in range(len(occlusion_percentages)):
+            if occlusion_percentages[i] < threshold:
+                room_masks.append(masks[i])
+        pass
     # SAVE THE MASKS
     #room_masks = masks
     print(len(room_masks))
@@ -435,7 +437,7 @@ def processnpy(masks: np.ndarray, name: str) -> list[np.ndarray]:
     largest_component = largest_connected_component(connection)
     if largest_component is not None:
         room_masks = [room_masks[i] for i in largest_component]
-    np.save('output_mask/' + name + '_room_mask.npy', room_masks)
+    np.save('output/output_mask/' + name + '_room_mask.npy', room_masks)
     connection, bbox = genConnection(room_masks)
     if len(connection) > 0:
         drawconnection(connection, bbox, room_masks,name)
@@ -449,14 +451,14 @@ def processnpy(masks: np.ndarray, name: str) -> list[np.ndarray]:
         "large_room":len(large_room),
         "small_room":len(small_room),
     }
-    with open("output_mask/{}_room_data.json".format(room_data), 'w') as f:
+    with open("output/output_mask/{}_room_data.json".format(name), 'w') as f:
         json.dump(room_data, f)
     return room_masks, room_data
 
 
 if __name__ == '__main__':
-    path = 'output_data_2d_12/'
-    save_path_prefix = "output_mask_2d_"
+    path = 'output/output_data_2d_16/'
+    save_path_prefix = "output/output_mask_2d_"
     maxnumber = 0
     for file in os.listdir("./"):
         if file.startswith(save_path_prefix):

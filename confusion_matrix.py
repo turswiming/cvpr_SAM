@@ -40,8 +40,8 @@ def drawconnection(masks):  # min_y,min_x,max_y,max_x
 
 
 path2023 = R"C:\Users\14318\scan2bim2024\2d\test\5cm_rooms"
-path2024 = "output_mask/"
-pathraw = "output_data_2d/"
+path2024 = "output/output_mask/"
+pathraw = "output/output_data_2d/"
 compare_files = [
     "02_TallOffice_01_F7",
     "02_TallOffice_01_F8",

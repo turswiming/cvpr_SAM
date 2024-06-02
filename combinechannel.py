@@ -81,7 +81,7 @@ def combinechannel(name):
     cv2.imwrite(path + "/" + '{}_rgb_image.png'.format(name), rgb_img)
 
 
-path = "output_data"
+path = "output/output_data"
 names = []
 for file in os.listdir(path):
 

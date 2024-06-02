@@ -2,7 +2,7 @@ import cv2
 import os
 
 # Specify the directory
-source = 'output_data_2d/'
+source = 'output/output_data_2d/'
 destination = 'playground/'
 
 # Set the JPEG quality

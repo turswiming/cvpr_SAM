@@ -57,39 +57,28 @@ class Seg:
 
         name = getName(read_path)
 
-        with open(path + name + "_bbox.json", 'r') as f:
-            data = json.load(f)
-        ceiling_high = data["ceiling"]["max"][2]
-        ceiling_low = data["ceiling"]["min"][2]
+
         img = np.array(img)
         min_val = np.min(img)
         max_val = np.max(img)
 
         # Rescale the grayscale values to the range 0-255
-        img_rescaled = ((img - min_val) / (max_val - min_val) * 255).astype(np.uint8)
-        img = Image.fromarray(img_rescaled)
-
-        img = np.array(img)  # Convert PIL Image back to numpy array
-
+        img = (img / max_val * 255).astype(np.uint8)
+        kernel = np.ones((3, 3), np.uint8)
+        img = cv2.erode(img, kernel, iterations=1)
         img_rgb = cv2.applyColorMap(img, cv2.COLORMAP_HSV)
-
+        img_rgb = np.dstack((img, img, img))
         img_np = img_rgb
         torch.cuda.empty_cache()
         masks = mask_generator.generate(img_np)
         print(len(masks))
         plt.figure(figsize=(20, 20))
-        plt.imshow(img * 0.2)
+        plt.imshow(img_rgb * 0.2)
         show_anns(masks)
         plt.axis('off')
         plt.savefig(save_path + '_segmented.png')
         plt.close()
         print('Segmentation saved to', save_path + '_segmented.png')
-        plt.figure(figsize=(20, 20))
-        plt.imshow(img * 0.01)
-        show_anns(masks)
-        plt.axis('off')
-        plt.savefig(save_path + '_segmented_pure.png')
-        plt.close()
 
         return masks
 
@@ -114,12 +103,12 @@ def show_anns(anns):
 
 # Read the image file
 path = "output_data_2d"
-
+#back up-------------------
 if __name__ == '__main__':
     seg = Seg("vit_h", 'model_weight/sam_vit_h_4b8939.pth')
 
-    path = 'output_data_2d/'
-    save_path_prefix = "output_data_2d_"
+    path = 'output/output_data_2d/'
+    save_path_prefix = "output/output_data_2d_"
     maxnumber = 0
     for file in os.listdir("./"):
         if file.startswith(save_path_prefix):
@@ -129,12 +118,8 @@ if __name__ == '__main__':
 
     os.mkdir(save_path_prefix + str(maxnumber + 1))
     save_path = save_path_prefix + str(maxnumber + 1) + "/"
-    # copy this python file to save path
-    shutil.copy("./segroom.py", save_path)
-    shutil.copytree(path, save_path+"/output_data_2d")
-
     for file in os.listdir(path):
-        if file.endswith('_ceiling_high_img.png') or file.endswith('_floor_low_img.png'):
+        if file.endswith('_ceiling_high_img.png'):
             img = Image.open(path + file)
             maxsize = max(np.asarray(img).shape)
             mask_generator = SamAutomaticMaskGenerator(
@@ -142,7 +127,7 @@ if __name__ == '__main__':
                 points_per_side=int(maxsize / 64),  # another magic number, but it works perfectly
                 points_per_batch=15,  # fit 16g vram perfectly
                 pred_iou_thresh=0.80,
-                stability_score_thresh=0.6,  # origin 0.7
+                stability_score_thresh=0.8,  # origin 0.7
                 stability_score_offset=-1,
                 box_nms_thresh=0.4,  # origin 0.7
 
@@ -154,5 +139,6 @@ if __name__ == '__main__':
             print('Segmentation saved to', save_path + file + '_new{}segmented.npy'.format(len(res)))
 
     shutil.copy("./segroom.py", save_path)
-    shutil.copytree(path, save_path + "/output_data_2d")
-# 现对单个通道进行分解，统计分解数量，越少的权重越高
+    shutil.copytree(path, save_path + "output_data_2d/")
+
+#back up-------------------

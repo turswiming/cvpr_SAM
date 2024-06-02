@@ -102,16 +102,18 @@ def process_pc(cloud_path: str, visualize: bool = False, res: float = 0.15, usen
     #find the largest group of points
     # Assuming `img` is your image
     pass # find the main group of points, wrap then ,and provide a main point mask
-    kernel = np.ones((7, 7), np.uint8)
+    kernel3 = np.ones((3, 3), np.uint8)
+    kernel5 = np.ones((5, 5), np.uint8)
+    kernel7 = np.ones((7, 7), np.uint8)
     ceiling_high_process = ceiling_high/np.max(ceiling_high)*255
-    ceiling_high_process = cv2.dilate(ceiling_high_process, kernel, iterations=1)
-    ceiling_high_process = cv2.erode(ceiling_high_process, kernel, iterations=1)
+    ceiling_high_process = cv2.erode(ceiling_high_process, kernel3, iterations=1)
     if len(ceiling_high_process.shape) == 3 and ceiling_high_process.shape[2] == 3:
         # Image is color
         img_gray = cv2.cvtColor(ceiling_high_process, cv2.COLOR_BGR2GRAY)
     else:
         # Image is already grayscale
         img_gray = ceiling_high_process
+    img_gray = cv2.dilate(img_gray, kernel7, iterations=1)
     img_8bit = cv2.convertScaleAbs(img_gray)
     num_labels, labels = cv2.connectedComponents(img_8bit)
     blob_sizes = np.bincount(labels.flatten())
@@ -136,18 +138,18 @@ def process_pc(cloud_path: str, visualize: bool = False, res: float = 0.15, usen
         "y_size":floor_bb.get_max_bound()[1] - floor_bb.get_min_bound()[1],
         "z_size":ceiling_bb.get_min_bound()[2] - floor_bb.get_min_bound()[2],
         "point_number": point_number,
-        "noise_rate": point_number-len(point_cloud_denoise.points) / point_number,
+        "noise_rate": (point_number-len(point_cloud_denoise.points)) / point_number,
 
     }
-    with open("output_data_2d/{}_bbox.json".format(file_name), 'w') as f:
+    with open("output/output_data_2d/{}_bbox.json".format(file_name), 'w') as f:
         json.dump(bb_data, f)
     # save the images
     print("saving images")
-    cv2.imwrite(rel2abs_Path("output_data_2d/{}_ceiling_mask.png".format(file_name)), largest_blob_mask)
-    cv2.imwrite(rel2abs_Path("output_data_2d/{}_floor_high_img.png".format(file_name)), floor_high)
-    cv2.imwrite(rel2abs_Path("output_data_2d/{}_floor_low_img.png".format(file_name)), floor_low)
-    cv2.imwrite(rel2abs_Path("output_data_2d/{}_ceiling_high_img.png".format(file_name)), ceiling_high)
-    cv2.imwrite(rel2abs_Path("output_data_2d/{}_ceiling_low_img.png".format(file_name)), ceiling_low)
+    cv2.imwrite(rel2abs_Path("output/output_data_2d/{}_ceiling_mask.png".format(file_name)), largest_blob_mask)
+    cv2.imwrite(rel2abs_Path("output/output_data_2d/{}_floor_high_img.png".format(file_name)), floor_high)
+    cv2.imwrite(rel2abs_Path("output/output_data_2d/{}_floor_low_img.png".format(file_name)), floor_low)
+    cv2.imwrite(rel2abs_Path("output/output_data_2d/{}_ceiling_high_img.png".format(file_name)), ceiling_high)
+    cv2.imwrite(rel2abs_Path("output/output_data_2d/{}_ceiling_low_img.png".format(file_name)), ceiling_low)
     print("done")
     print("")
 
@@ -257,7 +259,7 @@ def newDetect(
         o3d.visualization.draw_geometries([filtered_point_cloud])
 
     plot_stability_scores(heights)
-    plt.savefig(rel2abs_Path("output_data_2d/{}_heights.png".format(getName(name))))
+    plt.savefig(rel2abs_Path("output/output_data_2d/{}_heights.png".format(getName(name))))
     raise CustomError("finished,continue next task")
 
 
@@ -307,7 +309,7 @@ def get_floor_ceiling(name: str, point_cloud: o3d.geometry.PointCloud, visualize
         heights = np.asarray(filtered_point_cloud.points)[::, 2]  # replace with your data
 
         plt.hist(heights, edgecolor='black')
-        plt.savefig(rel2abs_Path("output_data_2d/{}_histogram.png".format(getName(name))))
+        plt.savefig(rel2abs_Path("output/output_data_2d/{}_histogram.png".format(getName(name))))
         plt.close()
         fig, ax = plt.subplots()
         ax.imshow(conv_result, cmap='hot')
@@ -318,7 +320,7 @@ def get_floor_ceiling(name: str, point_cloud: o3d.geometry.PointCloud, visualize
             edgecolor='r',
             facecolor='none')
         ax.add_patch(rect)
-        plt.savefig(rel2abs_Path("output_data_2d/{}_densitymap.png".format(getName(name))))
+        plt.savefig(rel2abs_Path("output/output_data_2d/{}_densitymap.png".format(getName(name))))
         plt.close()
         filtered_point_cloud = filtered_point_cloud.crop(
             o3d.geometry.AxisAlignedBoundingBox(
@@ -442,7 +444,7 @@ def extract_planes_point(
     return floor_point_cloud, ceiling_point_cloud
 
 
-Path = "/media/lzq/Windows/Users/14318/scan2bim2024/2d/test/5cm"
+Path = "/media/lzq/Windows/Users/14318/scan2bim2024/2d/test/2cm"
 if __name__ == "__main__":
     # process_pc("/media/lzq/Windows/Users/14318/scan2bim2024/2d/test/2cm/25_Parking_01_F2_s0p01m.ply", False, 0.02,False)
     # process_pc("/media/lzq/Windows/Users/14318/scan2bim2024/2d/test/2cm/02_TallOffice_01_F7_s0p01m.ply", False, 0.02,False)

@@ -12,7 +12,7 @@ from collections import defaultdict
 from scipy.ndimage import convolve
 from scipy.stats import trim_mean, trimboth
 
-
+OUTPUT_PREFIX = "output/output_data/"
 # don`t touch magic number here
 # we test them and find the value fit the best
 # this program was writened by lzq, who hold a bachelor degree in art&design
@@ -141,15 +141,15 @@ def process_pc(cloud_path: str, visualize: bool = False, res: float = 0.15, usen
         "noise_rate": (point_number-len(point_cloud_denoise.points)) / point_number,
 
     }
-    with open("output/output_data_2d/{}_bbox.json".format(file_name), 'w') as f:
+    with open("{}_bbox.json".format(OUTPUT_PREFIX+file_name), 'w') as f:
         json.dump(bb_data, f)
     # save the images
     print("saving images")
-    cv2.imwrite(rel2abs_Path("output/output_data_2d/{}_ceiling_mask.png".format(file_name)), largest_blob_mask)
-    cv2.imwrite(rel2abs_Path("output/output_data_2d/{}_floor_high_img.png".format(file_name)), floor_high)
-    cv2.imwrite(rel2abs_Path("output/output_data_2d/{}_floor_low_img.png".format(file_name)), floor_low)
-    cv2.imwrite(rel2abs_Path("output/output_data_2d/{}_ceiling_high_img.png".format(file_name)), ceiling_high)
-    cv2.imwrite(rel2abs_Path("output/output_data_2d/{}_ceiling_low_img.png".format(file_name)), ceiling_low)
+    cv2.imwrite(rel2abs_Path("{}_ceiling_mask.png".format(OUTPUT_PREFIX+file_name)), largest_blob_mask)
+    cv2.imwrite(rel2abs_Path("{}_floor_high_img.png".format(OUTPUT_PREFIX+file_name)), floor_high)
+    cv2.imwrite(rel2abs_Path("{}_floor_low_img.png".format(OUTPUT_PREFIX+file_name)), floor_low)
+    cv2.imwrite(rel2abs_Path("{}_ceiling_high_img.png".format(OUTPUT_PREFIX+file_name)), ceiling_high)
+    cv2.imwrite(rel2abs_Path("{}_ceiling_low_img.png".format(OUTPUT_PREFIX+file_name)), ceiling_low)
     print("done")
     print("")
 
@@ -259,7 +259,7 @@ def newDetect(
         o3d.visualization.draw_geometries([filtered_point_cloud])
 
     plot_stability_scores(heights)
-    plt.savefig(rel2abs_Path("output/output_data_2d/{}_heights.png".format(getName(name))))
+    plt.savefig(rel2abs_Path("{}_heights.png".format(OUTPUT_PREFIX+getName(name))))
     raise CustomError("finished,continue next task")
 
 
@@ -309,7 +309,7 @@ def get_floor_ceiling(name: str, point_cloud: o3d.geometry.PointCloud, visualize
         heights = np.asarray(filtered_point_cloud.points)[::, 2]  # replace with your data
 
         plt.hist(heights, edgecolor='black')
-        plt.savefig(rel2abs_Path("output/output_data_2d/{}_histogram.png".format(getName(name))))
+        plt.savefig(rel2abs_Path("{}_histogram.png".format(OUTPUT_PREFIX+getName(name))))
         plt.close()
         fig, ax = plt.subplots()
         ax.imshow(conv_result, cmap='hot')
@@ -320,7 +320,7 @@ def get_floor_ceiling(name: str, point_cloud: o3d.geometry.PointCloud, visualize
             edgecolor='r',
             facecolor='none')
         ax.add_patch(rect)
-        plt.savefig(rel2abs_Path("output/output_data_2d/{}_densitymap.png".format(getName(name))))
+        plt.savefig(rel2abs_Path("{}_densitymap.png".format(OUTPUT_PREFIX+getName(name))))
         plt.close()
         filtered_point_cloud = filtered_point_cloud.crop(
             o3d.geometry.AxisAlignedBoundingBox(
@@ -444,7 +444,7 @@ def extract_planes_point(
     return floor_point_cloud, ceiling_point_cloud
 
 
-Path = "/media/lzq/Windows/Users/14318/scan2bim2024/2d/test/2cm"
+Path = "/media/lzq/Windows/Users/14318/scan2bim2024/3d/test/5cm"
 if __name__ == "__main__":
     # process_pc("/media/lzq/Windows/Users/14318/scan2bim2024/2d/test/2cm/25_Parking_01_F2_s0p01m.ply", False, 0.02,False)
     # process_pc("/media/lzq/Windows/Users/14318/scan2bim2024/2d/test/2cm/02_TallOffice_01_F7_s0p01m.ply", False, 0.02,False)
@@ -457,11 +457,10 @@ if __name__ == "__main__":
 
     def process_file(file):
         if file.endswith(".ply"):
-            if "s0p01m" in file:
-                try:
-                    process_pc(f"{Path}/{file}", False, 0.05, False)
-                except CustomError as e:
-                    print(e)
+            try:
+                process_pc(f"{Path}/{file}", False, 0.05, False)
+            except CustomError as e:
+                print(e)
 
 
     parser = argparse.ArgumentParser()

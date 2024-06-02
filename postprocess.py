@@ -348,10 +348,10 @@ def largest_connected_component(connection):
 def processnpy(masks: np.ndarray, name: str) -> list[np.ndarray]:
     # print(masks[0].keys())
     # dict_keys(['segmentation', 'area', 'bbox', 'predicted_iou', 'point_coords', 'stability_score', 'crop_box'])
-    for file in os.listdir('output/output_data_2d/'):
+    for file in os.listdir('output/output_data/'):
         if file.endswith('ceiling_mask.png'):
             if name in file:
-                ceiling_high_map_mask = cv2.imread('output/output_data_2d/' + file, cv2.IMREAD_UNCHANGED)
+                ceiling_high_map_mask = cv2.imread('output/output_data/' + file, cv2.IMREAD_UNCHANGED)
                 break
     new_masks = []
     masks = sorted(masks, key=compare_mask_data)
@@ -437,7 +437,6 @@ def processnpy(masks: np.ndarray, name: str) -> list[np.ndarray]:
     largest_component = largest_connected_component(connection)
     if largest_component is not None:
         room_masks = [room_masks[i] for i in largest_component]
-    np.save('output/output_mask/' + name + '_room_mask.npy', room_masks)
     connection, bbox = genConnection(room_masks)
     if len(connection) > 0:
         drawconnection(connection, bbox, room_masks,name)
@@ -451,18 +450,18 @@ def processnpy(masks: np.ndarray, name: str) -> list[np.ndarray]:
         "large_room":len(large_room),
         "small_room":len(small_room),
     }
-    with open("output/output_mask/{}_room_data.json".format(name), 'w') as f:
-        json.dump(room_data, f)
+
     return room_masks, room_data
 
 
 if __name__ == '__main__':
-    path = 'output/output_data_2d_16/'
-    save_path_prefix = "output/output_mask_2d_"
+    path = 'output/output_data_3d_1/'
+    save_path_prefix = "output/output_mask_3d_"
     maxnumber = 0
-    for file in os.listdir("./"):
-        if file.startswith(save_path_prefix):
-            number = int(file.removeprefix(save_path_prefix))
+    for file in os.listdir("./output/"):
+        dir_prefix = save_path_prefix.split("/")[-1]
+        if file.startswith(dir_prefix):
+            number = int(file.removeprefix(dir_prefix))
             if number > maxnumber:
                 maxnumber = number
 
@@ -478,7 +477,11 @@ if __name__ == '__main__':
                 print("Processing", file)
                 name = getName(file)
 
-                _,room_data = processnpy(npy, name)
+                room_masks,room_data = processnpy(npy, name)
+                np.save(save_path+ name + '_room_mask.npy', room_masks)
+
+                with open(save_path+"{}_room_data.json".format(name), 'w') as f:
+                    json.dump(room_data, f)
 
     shutil.copy("./segroom.py", save_path)
     shutil.copy("./postprocess.py", save_path)

@@ -107,12 +107,13 @@ path = "output_data_2d"
 if __name__ == '__main__':
     seg = Seg("vit_h", 'model_weight/sam_vit_h_4b8939.pth')
 
-    path = 'output/output_data_2d/'
-    save_path_prefix = "output/output_data_2d_"
+    path = 'output/output_data/'
+    save_path_prefix = "output/output_data_3d_"
     maxnumber = 0
-    for file in os.listdir("./"):
-        if file.startswith(save_path_prefix):
-            number = int(file.removeprefix(save_path_prefix))
+    for file in os.listdir("./output/"):
+        dir_prefix = save_path_prefix.split("/")[-1]
+        if file.startswith(dir_prefix):
+            number = int(file.removeprefix(dir_prefix))
             if number > maxnumber:
                 maxnumber = number
 

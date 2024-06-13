@@ -1,6 +1,6 @@
 import os
 import json
-path = "output/output_mask/"
+path = "../output/output_mask/"
 outputfile = "decision.csv"
 with open(outputfile, 'w') as out:
     for file in os.listdir(path):

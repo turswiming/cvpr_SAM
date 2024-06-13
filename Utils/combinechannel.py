@@ -2,7 +2,7 @@ import os
 import numpy as np
 from PIL import Image
 import cv2
-from segroom import Seg
+from _02_segroom import Seg
 import json
 
 
@@ -55,7 +55,7 @@ def combinechannel(name):
     cv2.imwrite(path + "/temp/" + name + "_ceiling_high_adjustcolor.png", img1)
     cv2.imwrite(path + "/temp/" + name + "_ceiling_low_adjustcolor.png", img2)
     cv2.imwrite(path + "/temp/" + name + "_floor_high_adjustcolor.png", img3)
-    seg = Seg("vit_h", 'model_weight/sam_vit_h_4b8939.pth')
+    seg = Seg("vit_h", '../model_weight/sam_vit_h_4b8939.pth')
     mask1 = seg.segment(path + "/temp/" + name + "_ceiling_high_adjustcolor.png",
                         path + "/" + name + "_ceiling_high_segmented.png", True)
     mask2 = seg.segment(path + "/temp/" + name + "_ceiling_low_adjustcolor.png",
@@ -81,7 +81,7 @@ def combinechannel(name):
     cv2.imwrite(path + "/" + '{}_rgb_image.png'.format(name), rgb_img)
 
 
-path = "output/output_data"
+path = "../output/output_data"
 names = []
 for file in os.listdir(path):
 

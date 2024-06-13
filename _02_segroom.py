@@ -67,6 +67,7 @@ class Seg:
         kernel = np.ones((3, 3), np.uint8)
         img = cv2.erode(img, kernel, iterations=1)
         img_rgb = cv2.applyColorMap(img, cv2.COLORMAP_HSV)
+        cv2.imwrite(save_path + '_hsvcolor.png', img_rgb)
         img_rgb = np.dstack((img, img, img))
         img_np = img_rgb
         torch.cuda.empty_cache()
@@ -99,15 +100,13 @@ def show_anns(anns):
     ax.imshow(img)
 
 
-# 现对单个通道进行分解，统计分解数量，越少的权重越高
-
 # Read the image file
 path = "output_data_2d"
-#back up-------------------
 if __name__ == '__main__':
-    seg = Seg("vit_h", 'model_weight/sam_vit_h_4b8939.pth')
 
-    path = 'output/output_data/'
+    pass
+    # step 1: detect the output path, if a name have been used, then create a new folder -------------------------------
+    path = 'output/output_data_2d/'
     save_path_prefix = "output/output_data_3d_"
     maxnumber = 0
     for file in os.listdir("./output/"):
@@ -119,19 +118,23 @@ if __name__ == '__main__':
 
     os.mkdir(save_path_prefix + str(maxnumber + 1))
     save_path = save_path_prefix + str(maxnumber + 1) + "/"
+
+    pass
+    # step 2: segment images -------------------------------------------------------------------------------------------
+    seg = Seg("vit_h", 'model_weight/sam_vit_h_4b8939.pth')
     for file in os.listdir(path):
         if file.endswith('_ceiling_high_img.png'):
+            # step 2.1: set parameters ---------------------------------------------------------------------------------
             img = Image.open(path + file)
             maxsize = max(np.asarray(img).shape)
             mask_generator = SamAutomaticMaskGenerator(
                 model=seg.sam,
-                points_per_side=int(maxsize / 64),  # another magic number, but it works perfectly
-                points_per_batch=15,  # fit 16g vram perfectly
+                points_per_side=int(maxsize / 64),  # adjust this parameter to fit img size
+                points_per_batch=15,  # fit 16g VRAM perfectly
                 pred_iou_thresh=0.80,
                 stability_score_thresh=0.8,  # origin 0.7
                 stability_score_offset=-1,
                 box_nms_thresh=0.4,  # origin 0.7
-
                 crop_n_layers=0,
                 min_mask_region_area=100,  # Requires open-cv to run post-processing
             )
@@ -139,7 +142,9 @@ if __name__ == '__main__':
             np.save(save_path + file + '_new{}segmented.npy'.format(len(res)), res)
             print('Segmentation saved to', save_path + file + '_new{}segmented.npy'.format(len(res)))
 
-    shutil.copy("./segroom.py", save_path)
+    pass
+    # step 3: copy parameters and source image for reproduction --------------------------------------------------------
+    shutil.copy("_02_segroom.py", save_path)
     shutil.copytree(path, save_path + "output_data_2d/")
 
 #back up-------------------
